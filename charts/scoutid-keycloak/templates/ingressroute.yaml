@@ -1,0 +1,126 @@
+{{- $fullName := include "scoutid-keycloak.fullname" . -}}
+{{- $port := .Values.service.httpPort -}}
+{{- $isRoute := eq .Values.ingress.type "ingressroute" -}}
+
+{{- if and .Values.ingress.admin.enabled .Values.ingress.admin.ipAllowList }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullName }}-admin-ipallowlist
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  ipAllowList:
+    sourceRange:
+      {{- toYaml .Values.ingress.admin.ipAllowList | nindent 6 }}
+{{- end }}
+
+{{- if $isRoute }}
+{{- if and .Values.ingress.public.enabled .Values.ingress.public.rootRedirect.enabled }}
+---
+# Traefik answers the redirect before the request reaches Keycloak.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullName }}-root-redirect
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  redirectRegex:
+    regex: {{ printf "^https://%s/?$" (.Values.hostname.public | replace "." "\\.") | quote }}
+    replacement: {{ .Values.ingress.public.rootRedirect.url | quote }}
+    permanent: true
+{{- end }}
+{{- if .Values.ingress.public.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "scoutid-keycloak.publicTlsSecret" . }}
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
+  issuerRef:
+    name: {{ .Values.ingress.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ .Values.hostname.public }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-public
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.ingress.entryPoint }}
+  routes:
+    {{- if .Values.ingress.public.rootRedirect.enabled }}
+    - kind: Rule
+      match: Host(`{{ .Values.hostname.public }}`) && Path(`/`)
+      middlewares:
+        - name: {{ $fullName }}-root-redirect
+      services:
+        - name: {{ $fullName }}
+          port: {{ $port }}
+    {{- end }}
+    {{- $paths := .Values.ingress.public.paths | default (list "/") }}
+    {{- range $paths }}
+    {{- if eq . "/" }}
+    - kind: Rule
+      match: Host(`{{ $.Values.hostname.public }}`) && PathPrefix(`/`)
+      services:
+        - name: {{ $fullName }}
+          port: {{ $port }}
+    {{- else }}
+    - kind: Rule
+      match: Host(`{{ $.Values.hostname.public }}`) && PathPrefix(`{{ . }}`)
+      services:
+        - name: {{ $fullName }}
+          port: {{ $port }}
+    {{- end }}
+    {{- end }}
+  tls:
+    secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
+{{- end }}
+{{- if .Values.ingress.admin.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "scoutid-keycloak.adminTlsSecret" . }}
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "scoutid-keycloak.adminTlsSecret" . }}
+  issuerRef:
+    name: {{ .Values.ingress.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ .Values.hostname.admin }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullName }}-admin
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.ingress.entryPoint }}
+  routes:
+    - kind: Rule
+      match: Host(`{{ .Values.hostname.admin }}`)
+      {{- with .Values.ingress.admin.ipAllowList }}
+      middlewares:
+        - name: {{ $fullName }}-admin-ipallowlist
+      {{- end }}
+      services:
+        - name: {{ $fullName }}
+          port: {{ $port }}
+  tls:
+    secretName: {{ include "scoutid-keycloak.adminTlsSecret" . }}
+{{- end }}
+{{- end }}

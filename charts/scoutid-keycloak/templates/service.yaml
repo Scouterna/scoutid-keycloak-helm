@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "scoutid-keycloak.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: management
+      port: {{ .Values.service.managementPort }}
+      targetPort: management
+      protocol: TCP
+{{- if .Values.cache.enabled }}
+---
+# Headless service backing JGroups DNS_PING discovery.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}-headless
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "scoutid-keycloak.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: tcp-jgroups
+      port: 7800
+      targetPort: 7800
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,72 @@
+{{- if eq .Values.ingress.type "ingress" }}
+{{- $fullName := include "scoutid-keycloak.fullname" . -}}
+{{- $port := .Values.service.httpPort -}}
+{{- if .Values.ingress.public.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.hostname.public }}
+      secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
+  rules:
+    - host: {{ .Values.hostname.public }}
+      http:
+        paths:
+          {{- $paths := .Values.ingress.public.paths | default (list "/") }}
+          {{- range $paths }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $port }}
+          {{- end }}
+{{- end }}
+{{- if .Values.ingress.admin.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-admin
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    {{- with .Values.ingress.admin.ipAllowList }}
+    # Traefik reads this annotation; on nginx use nginx.ingress.kubernetes.io/whitelist-source-range.
+    traefik.ingress.kubernetes.io/router.middlewares: {{ $.Release.Namespace }}-{{ $fullName }}-admin-ipallowlist@kubernetescrd
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.hostname.admin }}
+      secretName: {{ include "scoutid-keycloak.adminTlsSecret" . }}
+  rules:
+    - host: {{ .Values.hostname.admin }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $port }}
+{{- end }}
+{{- end }}

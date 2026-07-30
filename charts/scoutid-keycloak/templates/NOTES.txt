@@ -1,0 +1,56 @@
+{{ .Chart.Name }} {{ .Chart.Version }} (Keycloak {{ .Chart.AppVersion }}) installed as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+Public:  {{ include "scoutid-keycloak.publicUrl" . }}
+{{- if .Values.hostname.admin }}
+Admin:   {{ include "scoutid-keycloak.adminUrl" . }}
+{{- else }}
+Admin:   (no separate admin host; the console is served on the public host)
+{{- end }}
+Database: {{ include "scoutid-keycloak.jdbcUrl" . }}
+          credentials from secret {{ include "scoutid-keycloak.dbSecretName" . }}
+
+Watch it come up (Liquibase migrations make the first boot slow):
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "scoutid-keycloak.fullname" . }}
+
+Check health directly:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "scoutid-keycloak.fullname" . }} {{ .Values.service.managementPort }}:{{ .Values.service.managementPort }}
+  curl -s localhost:{{ .Values.service.managementPort }}/health/ready
+
+{{- if eq .Values.ingress.type "none" }}
+
+NOTE: ingress.type=none — nothing is exposed outside the cluster.
+{{- else }}
+
+TLS is issued by ClusterIssuer {{ .Values.ingress.clusterIssuer }}. Verify:
+
+  kubectl -n {{ .Release.Namespace }} get certificate
+{{- if eq .Values.ingress.clusterIssuer "letsencrypt-prod" }}
+
+  Using the production ACME issuer. If this host is new, its rate limits are
+  real — validate with letsencrypt-staging first.
+{{- end }}
+{{- end }}
+{{- if and .Values.ingress.admin.enabled (not .Values.ingress.admin.ipAllowList) }}
+
+WARNING: the admin host {{ .Values.hostname.admin }} is exposed with no IP
+allowlist. Set ingress.admin.ipAllowList to restrict it.
+{{- end }}
+{{- if not .Values.admin.bootstrap.existingSecret }}
+
+NOTE: no bootstrap admin secret is configured. This is correct for an existing
+database that already has an admin; a fresh database will have no way to log in.
+{{- end }}
+{{- if .Values.configCli.enabled }}
+
+keycloak-config-cli is ENABLED and will apply realm config on each run.
+Renaming groups through it is destructive — see docs/configuration.md before
+changing group structure.
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+
+A ServiceMonitor was created with labels: {{ .Values.metrics.serviceMonitor.labels | toJson }}
+If these do not match your Prometheus serviceMonitorSelector, scraping fails
+silently. Confirm the target is UP in Prometheus.
+{{- end }}

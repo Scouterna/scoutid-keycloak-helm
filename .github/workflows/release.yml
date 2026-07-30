@@ -1,0 +1,60 @@
+name: Release chart
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CHART: charts/scoutid-keycloak
+  REGISTRY: ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Tag must match Chart.yaml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          chart=$(helm show chart "$CHART" | awk '/^version:/ {print $2}')
+          if [ "$tag" != "$chart" ]; then
+            echo "::error::tag v$tag does not match Chart.yaml version $chart"
+            exit 1
+          fi
+          echo "releasing $chart"
+
+      - name: Lint and render
+        run: |
+          helm lint "$CHART"
+          for f in examples/values-*.yaml; do
+            helm template kc "$CHART" -f "$f" >/dev/null
+          done
+
+      - name: Package
+        run: helm package "$CHART" --destination dist/
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ${{ env.REGISTRY }} \
+                --username ${{ github.actor }} --password-stdin
+
+      - name: Push to ${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+        run: |
+          helm push dist/*.tgz \
+            "oci://${REGISTRY}/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/charts"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tgz
+          generate_release_notes: true

@@ -1,0 +1,210 @@
+{{- include "scoutid-keycloak.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "scoutid-keycloak.selectorLabels" . | nindent 6 }}
+  strategy:
+    {{- if .Values.cache.enabled }}
+    type: RollingUpdate
+    {{- else }}
+    # Single replica against one DB schema: never run two versions concurrently.
+    type: Recreate
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "scoutid-keycloak.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "scoutid-keycloak.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- if .Values.initContainers.waitForDb.enabled }}
+      initContainers:
+        - name: wait-for-db
+          image: {{ .Values.initContainers.waitForDb.image }}
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ include "scoutid-keycloak.dbHost" . }} {{ include "scoutid-keycloak.dbPort" . }}; do
+                echo "waiting for postgres..."; sleep 3;
+              done
+          securityContext:
+            {{- with .Values.securityContext }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.initContainers.waitForDb.runAsUser }}
+            runAsUser: {{ . }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      {{- end }}
+      containers:
+        - name: keycloak
+          image: {{ include "scoutid-keycloak.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Required: the image entrypoint execs kc.sh with no default subcommand.
+          args: ["start", "--optimized"]
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: {{ include "scoutid-keycloak.jdbcUrl" . | quote }}
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.usernameKey }}
+            # KCRAW_DB_PASSWORD is documented upstream but is not honoured by this image.
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.passwordKey }}
+            - name: KC_HOSTNAME
+              value: {{ include "scoutid-keycloak.publicUrl" . | quote }}
+            {{- if .Values.hostname.admin }}
+            - name: KC_HOSTNAME_ADMIN
+              value: {{ include "scoutid-keycloak.adminUrl" . | quote }}
+            {{- end }}
+            - name: KC_HOSTNAME_STRICT
+              value: {{ .Values.hostname.strict | quote }}
+            - name: KC_HTTP_ENABLED
+              value: {{ .Values.keycloak.httpEnabled | quote }}
+            - name: KC_PROXY_HEADERS
+              value: {{ .Values.keycloak.proxyHeaders | quote }}
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: {{ .Values.metrics.enabled | quote }}
+            {{- if .Values.keycloak.features.userEventMetrics }}
+            # Requires user-event-metrics baked in at build time; enabling it on an
+            # image without it exits 2 under --optimized.
+            - name: KC_EVENT_METRICS_USER_ENABLED
+              value: "true"
+            {{- with .Values.keycloak.features.userEventMetricsTags }}
+            - name: KC_EVENT_METRICS_USER_TAGS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.cache.enabled }}
+            - name: KC_CACHE
+              value: ispn
+            - name: KC_CACHE_STACK
+              value: {{ .Values.cache.stack }}
+            - name: JAVA_OPTS_APPEND
+              value: "-Djgroups.dns.query={{ include "scoutid-keycloak.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+            {{- end }}
+            {{- with .Values.keycloak.logLevel }}
+            - name: KC_LOG_LEVEL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.admin.bootstrap.existingSecret }}
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.usernameKey }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.passwordKey }}
+            {{- end }}
+            {{- with .Values.scoutnet.baseUrl }}
+            - name: SCOUTNET_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.keycloak.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.keycloak.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+            - name: management
+              containerPort: {{ .Values.service.managementPort }}
+              protocol: TCP
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

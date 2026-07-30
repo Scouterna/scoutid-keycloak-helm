@@ -1,0 +1,83 @@
+{{- if .Values.configCli.enabled }}
+{{- $cmName := default (printf "%s-realm-config" (include "scoutid-keycloak.fullname" .)) .Values.configCli.existingConfigMap }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}-config
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  {{- if .Values.configCli.hook }}
+  annotations:
+    argocd.argoproj.io/hook: {{ .Values.configCli.hook }}
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.configCli.backoffLimit }}
+  {{- with .Values.configCli.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "scoutid-keycloak.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: config-cli
+      annotations:
+        {{- if and .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
+        # Re-runs the Job when the realm config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-realm.yaml") . | sha256sum }}
+        {{- end }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: keycloak-config-cli
+          image: {{ .Values.configCli.image }}
+          env:
+            - name: KEYCLOAK_URL
+              value: {{ include "scoutid-keycloak.internalUrl" . | quote }}
+            - name: KEYCLOAK_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.usernameKey }}
+            - name: KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.passwordKey }}
+            - name: KEYCLOAK_AVAILABILITYCHECK_ENABLED
+              value: "true"
+            - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
+              value: {{ .Values.configCli.availabilityCheckTimeout | quote }}
+            - name: IMPORT_FILES_LOCATIONS
+              value: /config/*
+            # Off by default in the tool: without it, $(env:X) is stored as a literal.
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: {{ .Values.configCli.varSubstitution | quote }}
+            - name: IMPORT_MANAGED_GROUP
+              value: {{ .Values.configCli.managedGroup | quote }}
+            {{- with .Values.configCli.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.configCli.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $cmName }}
+{{- end }}

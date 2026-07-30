@@ -1,0 +1,56 @@
+# PROD on the Scouterna azure-webservices cluster. Stated completely: a value
+# added to the dev file does NOT reach prod unless it is also added here.
+# Namespace: scoutid-prod.
+image:
+  tag: sha-e2b6218                       # pin a digest-backed tag for prod
+
+replicaCount: 1                          # >1 requires cache.enabled
+
+hostname:
+  public: id.scouterna.se
+  admin: admin.id.scouterna.se
+
+database:
+  mode: cnpg
+  cnpg:
+    clusterName: scoutid-keycloak-db
+
+admin:
+  bootstrap:
+    existingSecret: keycloak-admin
+  ensurePermanentAdmin:
+    enabled: true
+    existingSecret: keycloak-admin
+    hook: PostSync
+
+ingress:
+  type: ingress
+  className: traefik
+  clusterIssuer: letsencrypt-prod
+  public:
+    enabled: true
+    paths:
+      - /realms
+      - /resources
+  admin:
+    enabled: true
+    # Left empty deliberately: 0.0.0.0/0 here would look like a gate while allowing
+    # everything. Either list the real admin CIDRs or leave it open knowingly.
+    ipAllowList: []
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps
+
+podDisruptionBudget:
+  enabled: false                         # single replica: a PDB would block node drains
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    memory: 2Gi

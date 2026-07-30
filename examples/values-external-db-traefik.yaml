@@ -1,0 +1,69 @@
+# Traefik IngressRoutes, an external managed PostgreSQL, and secrets materialized
+# by the Secrets Store CSI driver from a cloud key vault.
+#
+# Use this shape when the cluster runs Traefik and you want its native CRDs
+# (path-restricted public route, a root redirect, an IP-gated admin host) rather
+# than a plain Ingress, and the database lives outside the cluster.
+image:
+  tag: sha-e2b6218                       # pin a specific build
+
+hostname:
+  public: id.example.se
+  admin: admin.id.example.se
+
+database:
+  mode: external
+  external:
+    host: psql-example.postgres.database.azure.com
+    port: 5432
+    name: keycloak
+    sslMode: require
+  credentials:
+    existingSecret: keycloak-db-csi
+    usernameKey: KC_DB_USERNAME
+    passwordKey: KC_DB_PASSWORD
+
+admin:
+  bootstrap:
+    existingSecret: keycloak-admin-csi
+  ensurePermanentAdmin:
+    enabled: true
+    existingSecret: keycloak-admin-csi
+    hook: PostSync
+
+ingress:
+  type: ingressroute
+  clusterIssuer: letsencrypt-traefik
+  entryPoint: websecure
+  public:
+    enabled: true
+    paths:
+      - /realms
+      - /resources
+    rootRedirect:
+      enabled: true
+      url: https://www.scouterna.se/scout-ledare-kar/leda-kar/etjanster/scoutid/
+  admin:
+    enabled: true
+    ipAllowList: []                      # list trusted CIDRs to gate the admin host
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps
+
+# Mounting the CSI volume is what makes the driver materialize the referenced
+# Secrets. Rotating a vault value needs `kubectl delete secret` then a restart —
+# a restart alone is not enough when secret rotation is disabled on the driver.
+extraVolumes:
+  - name: secrets-store
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: keycloak-kv-csi
+extraVolumeMounts:
+  - name: secrets-store
+    mountPath: /mnt/secrets-store
+    readOnly: true

@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "scoutid-keycloak values",
+  "type": "object",
+  "required": ["image", "hostname", "database", "ingress"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "replicaCount": { "type": "integer", "minimum": 0 },
+    "priorityClassName": { "type": "string" },
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "pullSecrets": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "hostname": {
+      "type": "object",
+      "required": ["public"],
+      "properties": {
+        "public": {
+          "type": "string",
+          "pattern": "^([^:/]+)?$",
+          "description": "Bare host without scheme or path. Required at render time; empty only so `helm lint` passes on the shipped defaults."
+        },
+        "admin": { "type": "string", "pattern": "^([^:/]+)?$" },
+        "strict": { "type": "boolean" }
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["cnpg", "external"] },
+        "cnpg": {
+          "type": "object",
+          "properties": {
+            "clusterName": { "type": "string" },
+            "secretName": { "type": "string" },
+            "host": { "type": "string" },
+            "database": { "type": "string" },
+            "sslMode": { "type": "string", "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"] }
+          }
+        },
+        "external": {
+          "type": "object",
+          "properties": {
+            "jdbcUrl": { "type": "string", "pattern": "^(jdbc:postgresql://.*)?$" },
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "name": { "type": "string" },
+            "sslMode": { "type": "string", "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"] },
+            "params": { "type": "string" }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "usernameKey": { "type": "string", "minLength": 1 },
+            "passwordKey": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "admin": {
+      "type": "object",
+      "properties": {
+        "bootstrap": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "usernameKey": { "type": "string", "minLength": 1 },
+            "passwordKey": { "type": "string", "minLength": 1 }
+          }
+        },
+        "ensurePermanentAdmin": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingSecret": { "type": "string" },
+            "usernameKey": { "type": "string", "minLength": 1 },
+            "passwordKey": { "type": "string", "minLength": 1 },
+            "hook": { "type": "string", "enum": ["", "Sync", "PostSync", "PreSync", "Skip"] },
+            "backoffLimit": { "type": "integer", "minimum": 0 },
+            "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
+      }
+    },
+    "scoutnet": {
+      "type": "object",
+      "properties": {
+        "baseUrl": { "type": "string", "pattern": "^(https?://.*)?$" }
+      }
+    },
+    "keycloak": {
+      "type": "object",
+      "properties": {
+        "proxyHeaders": { "type": "string", "enum": ["", "xforwarded", "forwarded"] },
+        "httpEnabled": { "type": "boolean" },
+        "logLevel": { "type": "string" },
+        "features": {
+          "type": "object",
+          "properties": {
+            "userEventMetrics": { "type": "boolean" },
+            "userEventMetricsTags": { "type": "string" }
+          }
+        },
+        "extraEnv": { "type": "array", "items": { "type": "object" } },
+        "extraEnvFrom": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "managementPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ingress", "ingressroute", "none"] },
+        "className": { "type": "string" },
+        "clusterIssuer": { "type": "string" },
+        "entryPoint": { "type": "string" },
+        "annotations": { "type": "object" },
+        "public": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "paths": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+            "rootRedirect": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "url": { "type": "string" }
+              }
+            },
+            "tlsSecretName": { "type": "string" }
+          }
+        },
+        "admin": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "ipAllowList": { "type": "array", "items": { "type": "string" } },
+            "tlsSecretName": { "type": "string" }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "labels": { "type": "object" },
+            "interval": { "type": "string" },
+            "scrapeTimeout": { "type": "string" }
+          }
+        }
+      }
+    },
+    "configCli": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "type": "string" },
+        "varSubstitution": { "type": "boolean" },
+        "configDir": { "type": "string" },
+        "existingConfigMap": { "type": "string" },
+        "managedGroup": { "type": "string", "enum": ["full", "no-delete"] },
+        "availabilityCheckTimeout": { "type": "string" },
+        "extraEnv": { "type": "array", "items": { "type": "object" } },
+        "extraEnvFrom": { "type": "array", "items": { "type": "object" } },
+        "hook": { "type": "string", "enum": ["", "Sync", "PostSync", "PreSync", "Skip"] },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "stack": { "type": "string" }
+      }
+    },
+    "initContainers": {
+      "type": "object",
+      "properties": {
+        "waitForDb": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "type": "string" },
+            "runAsUser": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "securityContext": { "type": "object" },
+    "resources": { "type": "object" },
+    "podDisruptionBudget": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string"] },
+        "maxUnavailable": { "type": ["integer", "string"] }
+      }
+    },
+    "startupProbe": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "readinessProbe": {
+      "type": "object",
+      "properties": {
+        "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "livenessProbe": {
+      "type": "object",
+      "properties": {
+        "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "podAnnotations": { "type": "object" },
+    "podLabels": { "type": "object" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array", "items": { "type": "object" } },
+    "affinity": { "type": "object" },
+    "topologySpreadConstraints": { "type": "array", "items": { "type": "object" } },
+    "extraVolumes": { "type": "array", "items": { "type": "object" } },
+    "extraVolumeMounts": { "type": "array", "items": { "type": "object" } }
+  }
+}

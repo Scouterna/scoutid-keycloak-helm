@@ -1,0 +1,125 @@
+name: Lint chart
+
+on:
+  push:
+  pull_request:
+
+env:
+  CHART: charts/scoutid-keycloak
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: helm lint
+        run: helm lint ${{ env.CHART }}
+
+      - name: Render every example
+        run: |
+          fail=0
+          for f in examples/values-*.yaml; do
+            echo "::group::$f"
+            if ! helm template kc "$CHART" -f "$f"; then
+              echo "::error file=$f::failed to render"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      - name: Guards must reject invalid values
+        run: |
+          fail=0
+          check() {
+            local desc="$1"; shift
+            if helm template kc "$CHART" "$@" >/dev/null 2>&1; then
+              echo "::error::guard did not fire: $desc"
+              fail=1
+            else
+              echo "ok: $desc"
+            fi
+          }
+          check "missing hostname.public" --set database.cnpg.clusterName=db
+          check "scheme in hostname.public" --set hostname.public=https://id.example.se --set database.cnpg.clusterName=db
+          check "replicas>1 without cache" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set replicaCount=3
+          check "invalid database.mode" --set hostname.public=id.example.se --set database.mode=bogus
+          check "invalid ingress.type" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.type=bogus
+          check "cnpg without clusterName" --set hostname.public=id.example.se
+          check "cnpg with only a secret name (host would be '-rw')" --set hostname.public=id.example.se --set database.cnpg.secretName=my-db
+          check "cnpg with only credentials.existingSecret" --set hostname.public=id.example.se --set database.credentials.existingSecret=my-creds
+          check "cnpg with a host but no credential source" --set hostname.public=id.example.se --set database.cnpg.host=pg.example.se
+          check "external without credentials" --set hostname.public=id.example.se --set database.mode=external --set database.external.host=db.example.se
+          check "admin ingress without admin host" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.admin.enabled=true
+          check "rootRedirect on plain Ingress" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.public.rootRedirect.enabled=true
+          check "ipAllowList on a non-Traefik controller" --set hostname.public=id.example.se --set hostname.admin=admin.id.example.se --set database.cnpg.clusterName=db --set ingress.className=nginx --set ingress.admin.enabled=true --set 'ingress.admin.ipAllowList={10.0.0.0/8}'
+          check "waitForDb with no resolvable host" --set hostname.public=id.example.se --set database.mode=external --set 'database.external.jdbcUrl=jdbc:postgresql://h:5432/d' --set database.credentials.existingSecret=s --set initContainers.waitForDb.enabled=true
+          check "empty image.tag" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set image.tag=
+          check "non-integer ttlSecondsAfterFinished" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set configCli.ttlSecondsAfterFinished=600s
+          exit $fail
+
+      - name: Assert load-bearing details survive rendering
+        run: |
+          out=$(helm template kc "$CHART" -f examples/values-azure-webservices-prod.yaml)
+          fail=0
+          assert() {
+            if ! grep -qE "$1" <<<"$out"; then
+              echo "::error::missing from rendered output: $2"
+              fail=1
+            else
+              echo "ok: $2"
+            fi
+          }
+          assert 'args: \["start", "--optimized"\]'  'kc.sh start --optimized (entrypoint has no default subcommand)'
+          assert 'containerPort: 9000'               'management port (health + metrics)'
+          assert 'path: /health/ready'               'readiness probe'
+          assert 'path: /health/live'                'liveness probe'
+          assert 'release: kps'                      'ServiceMonitor selector label'
+          assert 'name: KC_DB_PASSWORD'              'DB password env (KCRAW_ is not honoured)'
+          # Upstream publishes no semver tags; a bare x.y.z tag would ErrImagePull.
+          if grep -qE 'image: ghcr\.io/scouterna/scoutid-keycloak:[0-9]+\.[0-9]+\.[0-9]+$' <<<"$out"; then
+            echo "::error::image tag looks like a semver version; upstream only publishes latest and sha-<short>"
+            fail=1
+          else
+            echo "ok: image tag is not a non-existent semver tag"
+          fi
+          exit $fail
+
+      - name: Rendered JDBC URLs must have a real host
+        run: |
+          fail=0
+          for f in examples/values-*.yaml; do
+            while read -r url; do
+              # Catches an empty or derived-from-nothing host, e.g. jdbc:postgresql://-rw:5432/…
+              if [[ "$url" =~ ^jdbc:postgresql://(-|:) ]]; then
+                echo "::error file=$f::malformed JDBC host: $url"
+                fail=1
+              else
+                echo "ok: $f -> $url"
+              fi
+            done < <(helm template kc "$CHART" -f "$f" | grep -oE 'jdbc:postgresql://[^"]*')
+          done
+          exit $fail
+
+      - name: Install kubeconform
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install /tmp/kubeconform /usr/local/bin/
+
+      - name: Validate rendered manifests against Kubernetes schemas
+        run: |
+          # Traefik/cert-manager/Prometheus CRDs are not in the default schema set;
+          # -ignore-missing-schemas skips them but still validates core objects.
+          for f in examples/values-*.yaml; do
+            echo "::group::$f"
+            helm template kc "$CHART" -f "$f" \
+              | kubeconform -strict -ignore-missing-schemas -summary
+            echo "::endgroup::"
+          done

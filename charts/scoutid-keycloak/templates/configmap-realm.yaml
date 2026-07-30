@@ -1,0 +1,18 @@
+{{- if and .Values.configCli.enabled .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}-realm-config
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+data:
+  {{- $glob := printf "%s/*" (.Values.configCli.configDir | trimSuffix "/") }}
+  {{- $files := .Files.Glob $glob }}
+  {{- if not $files }}
+  {{- fail (printf "configCli.configDir %q matched no files; the path is relative to the chart root and files must not be excluded by .helmignore" .Values.configCli.configDir) }}
+  {{- end }}
+  {{- range $path, $_ := $files }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

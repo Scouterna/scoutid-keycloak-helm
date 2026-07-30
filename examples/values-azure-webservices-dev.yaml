@@ -1,0 +1,49 @@
+# DEV on the Scouterna azure-webservices cluster. Stated completely — nothing is
+# inherited from the prod file. Namespace: scoutid-dev.
+image:
+  tag: latest                            # dev tracks the default branch
+
+replicaCount: 1
+
+hostname:
+  public: id.dev.wsinfra.scouterna.net
+  admin: admin.id.dev.wsinfra.scouterna.net
+
+database:
+  mode: cnpg
+  cnpg:
+    clusterName: scoutid-keycloak-db
+
+admin:
+  bootstrap:
+    existingSecret: keycloak-admin       # SealedSecret; see docs/install.md
+
+ingress:
+  type: ingress
+  className: traefik
+  clusterIssuer: letsencrypt-staging     # flip to -prod once it issues cleanly
+  public:
+    enabled: true
+    paths:
+      - /realms
+      - /resources
+  admin:
+    enabled: true
+    ipAllowList: []                      # open on dev
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kps
+
+keycloak:
+  logLevel: INFO,se.scouterna.keycloak:DEBUG
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    memory: 1280Mi

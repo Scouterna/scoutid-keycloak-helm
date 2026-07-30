@@ -1,0 +1,101 @@
+{{- if .Values.admin.ensurePermanentAdmin.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "scoutid-keycloak.fullname" . }}-ensure-admin
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  {{- if .Values.admin.ensurePermanentAdmin.hook }}
+  annotations:
+    argocd.argoproj.io/hook: {{ .Values.admin.ensurePermanentAdmin.hook }}
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.admin.ensurePermanentAdmin.backoffLimit }}
+  {{- with .Values.admin.ensurePermanentAdmin.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "scoutid-keycloak.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ensure-admin
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ensure-admin
+          image: {{ include "scoutid-keycloak.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              # $HOME is not writable in this image; kcadm needs an explicit config path.
+              KCADM="/opt/keycloak/bin/kcadm.sh"
+              CFG="--config /tmp/kcadm.config"
+
+              $KCADM config credentials $CFG \
+                --server "{{ include "scoutid-keycloak.internalUrl" . }}" \
+                --realm master \
+                --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+                --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+
+              RESULT=$($KCADM get users $CFG -r master \
+                -q username="$MASTER_ADMIN_USERNAME" --fields id)
+
+              if echo "$RESULT" | grep -q '"id"'; then
+                echo "Admin user '$MASTER_ADMIN_USERNAME' already exists — skipping."
+                exit 0
+              fi
+
+              $KCADM create users $CFG -r master \
+                -s username="$MASTER_ADMIN_USERNAME" -s enabled=true
+              $KCADM set-password $CFG -r master \
+                --username "$MASTER_ADMIN_USERNAME" --new-password "$MASTER_ADMIN_PASSWORD"
+              # Master-realm admins use the realm role `admin`, a composite that
+              # bundles the <realm>-realm client roles. The realm-management client
+              # exists only in non-master realms, so realm-admin is wrong here.
+              $KCADM add-roles $CFG -r master \
+                --uusername "$MASTER_ADMIN_USERNAME" --rolename admin
+
+              echo "Created '$MASTER_ADMIN_USERNAME' with the master realm's composite admin role."
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.usernameKey }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.bootstrap.existingSecret }}
+                  key: {{ .Values.admin.bootstrap.passwordKey }}
+            - name: MASTER_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.ensurePermanentAdmin.existingSecret }}
+                  key: {{ .Values.admin.ensurePermanentAdmin.usernameKey }}
+            - name: MASTER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.ensurePermanentAdmin.existingSecret }}
+                  key: {{ .Values.admin.ensurePermanentAdmin.passwordKey }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+{{- end }}

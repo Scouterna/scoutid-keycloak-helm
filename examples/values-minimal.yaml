@@ -1,0 +1,30 @@
+# Smallest working configuration: any Kubernetes, any PostgreSQL, plain Ingress.
+# Bring your own database and a Secret holding its credentials.
+hostname:
+  public: id.example.org
+
+database:
+  mode: external
+  external:
+    host: postgres.example.org
+    name: keycloak
+    sslMode: require
+  credentials:
+    existingSecret: keycloak-db          # keys: username, password
+
+admin:
+  bootstrap:
+    existingSecret: keycloak-admin
+
+ingress:
+  type: ingress
+  className: nginx
+  clusterIssuer: letsencrypt-prod
+  public:
+    enabled: true
+    paths:
+      - /                                # single host, everything exposed
+
+metrics:
+  serviceMonitor:
+    enabled: false                       # no Prometheus operator assumed
