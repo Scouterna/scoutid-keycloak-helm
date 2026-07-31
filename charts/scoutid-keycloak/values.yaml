@@ -140,7 +140,8 @@ configCli:
   backoffLimit: 10
   ttlSecondsAfterFinished: 600
   # The image already runs as nobody (65534) and starts on a read-only rootfs,
-  # so these defaults are safe. Set either to {} to drop the field entirely.
+  # so these defaults are safe. Set either to null to drop the field entirely;
+  # {} does NOT work, Helm merges it with these defaults and they survive.
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:
@@ -160,8 +161,8 @@ configCli:
 cache:
   enabled: false                 # KC_CACHE=ispn + KUBE_PING; required for replicaCount > 1
   stack: kubernetes
-  # JGroups bind port. 7800 is the Keycloak/Infinispan default; change it only
-  # alongside a matching jgroups.bind_port override. JGroups also opens the
+  # JGroups bind port; drives the container port, the headless Service and
+  # -Djgroups.tcp.port, so changing it here is enough. JGroups also opens the
   # failure-detection socket at this port + 50000 (57800), which needs no Service.
   jgroupsPort: 7800
 

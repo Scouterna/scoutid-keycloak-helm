@@ -46,7 +46,8 @@ spec:
               set -eu
               # kcadm writes access + refresh tokens (not the password) to its config
               # file at 0600. Still a bearer credential, so keep it in a private temp
-              # file and shred it on exit rather than leaving a predictable path behind.
+              # file and remove it on exit rather than leaving a predictable path
+              # behind. The pod's filesystem goes away with the pod, so rm is enough.
               KCADM="/opt/keycloak/bin/kcadm.sh"
               KCADM_CONFIG=$(mktemp)
               trap 'rm -f "$KCADM_CONFIG"' EXIT INT TERM

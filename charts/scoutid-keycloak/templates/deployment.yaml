@@ -139,8 +139,12 @@ spec:
               value: ispn
             - name: KC_CACHE_STACK
               value: {{ .Values.cache.stack | quote }}
+            {{- /* jgroups.tcp.port is what Keycloak honours; jgroups.bind_port is
+                   ignored. Both live in one JAVA_OPTS_APPEND because a second env
+                   var of the same name would replace this one, silently dropping
+                   the DNS query that discovery depends on. */}}
             - name: JAVA_OPTS_APPEND
-              value: "-Djgroups.dns.query={{ include "scoutid-keycloak.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              value: "-Djgroups.dns.query={{ include "scoutid-keycloak.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local -Djgroups.tcp.port={{ .Values.cache.jgroupsPort }}"
             {{- end }}
             {{- with .Values.keycloak.logLevel }}
             - name: KC_LOG_LEVEL

@@ -330,9 +330,10 @@ these clusters.
 `cache.jgroupsPort` drives both the container port and the headless Service, so the
 two cannot drift. JGroups additionally opens its failure-detection socket at that
 port + 50000 (57800 by default); that one is peer-to-peer and needs no Service entry.
-Changing the port also requires a matching `-Djgroups.tcp.port=<port>` in
-`extraJavaOpts` — Keycloak does not read this value. (`jgroups.bind_port` is the
-JGroups-level name and is *not* honoured here; verified against the image.)
+The chart passes `-Djgroups.tcp.port` from this value, so changing `jgroupsPort`
+is enough — container port, headless Service and JGroups itself all follow.
+(`jgroups.bind_port` is the JGroups-level name and is *not* honoured by Keycloak;
+verified against the image.)
 
 ### Disruption budget
 
