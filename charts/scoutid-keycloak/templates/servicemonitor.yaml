@@ -17,8 +17,15 @@ spec:
     matchLabels:
       {{- include "scoutid-keycloak.selectorLabels" . | nindent 6 }}
   endpoints:
-    - port: management
-      path: /metrics
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+    {{- /* An empty interval/scrapeTimeout is accepted by the API server but makes
+           Prometheus fall back to its global defaults, so the scrape silently stops
+           honouring these values. Omit the key entirely instead of emitting a blank. */}}
+    - port: {{ .Values.metrics.serviceMonitor.port | default "management" }}
+      path: {{ .Values.metrics.serviceMonitor.path | default "/metrics" | quote }}
+      {{- with .Values.metrics.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
 {{- end }}

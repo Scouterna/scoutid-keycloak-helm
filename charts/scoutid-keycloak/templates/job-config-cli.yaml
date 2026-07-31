@@ -1,4 +1,4 @@
-{{- if .Values.configCli.enabled }}
+{{- if or .Values.scoutid.enabled .Values.configCli.enabled }}
 {{- $cmName := default (printf "%s-realm-config" (include "scoutid-keycloak.fullname" .)) .Values.configCli.existingConfigMap }}
 apiVersion: batch/v1
 kind: Job
@@ -21,13 +21,21 @@ spec:
       labels:
         {{- include "scoutid-keycloak.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: config-cli
+      {{- if not .Values.configCli.existingConfigMap }}
       annotations:
-        {{- if and .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
-        # Re-runs the Job when the realm config changes.
+        # Re-runs the Job when the realm config changes. With an existingConfigMap
+        # the chart cannot see the content, so there is nothing to checksum — and
+        # the key is dropped entirely rather than left as an empty map.
         checksum/config: {{ include (print $.Template.BasePath "/configmap-realm.yaml") . | sha256sum }}
-        {{- end }}
+      {{- end }}
     spec:
       restartPolicy: OnFailure
+      # Talks only to Keycloak's HTTP API, never to the Kubernetes API.
+      automountServiceAccountToken: false
+      {{- with .Values.configCli.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -35,6 +43,10 @@ spec:
       containers:
         - name: keycloak-config-cli
           image: {{ .Values.configCli.image }}
+          {{- with .Values.configCli.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: KEYCLOAK_URL
               value: {{ include "scoutid-keycloak.internalUrl" . | quote }}
@@ -71,11 +83,7 @@ spec:
               mountPath: /config
               readOnly: true
           resources:
-            requests:
-              cpu: 50m
-              memory: 256Mi
-            limits:
-              memory: 512Mi
+            {{- toYaml .Values.configCli.resources | nindent 12 }}
       volumes:
         - name: config
           configMap:

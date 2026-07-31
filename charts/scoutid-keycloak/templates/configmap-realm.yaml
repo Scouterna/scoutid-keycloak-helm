@@ -1,4 +1,6 @@
-{{- if and .Values.configCli.enabled .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
+{{- $useBundled := and .Values.scoutid.enabled (not .Values.configCli.existingConfigMap) }}
+{{- $useOwn := and .Values.configCli.enabled .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
+{{- if or $useBundled $useOwn }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,13 +8,18 @@ metadata:
   labels:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
 data:
-  {{- $glob := printf "%s/*" (.Values.configCli.configDir | trimSuffix "/") }}
-  {{- $files := .Files.Glob $glob }}
-  {{- if not $files }}
-  {{- fail (printf "configCli.configDir %q matched no files; the path is relative to the chart root and files must not be excluded by .helmignore" .Values.configCli.configDir) }}
+  {{- if $useBundled }}
+  {{- $bundled := .Files.Glob "scoutid-config/*.yaml" }}
+  {{- if not $bundled }}
+  {{- fail "scoutid.enabled=true but the chart's scoutid-config/ directory is empty — the chart package is incomplete" }}
   {{- end }}
-  {{- range $path, $_ := $files }}
-  {{ base $path }}: |
-    {{- $.Files.Get $path | nindent 4 }}
+  {{- include "scoutid-keycloak.configMapData" (dict "files" $bundled "root" $) }}
+  {{- end }}
+  {{- if $useOwn }}
+  {{- $files := .Files.Glob (include "scoutid-keycloak.configDirGlob" .) }}
+  {{- if not $files }}
+  {{- fail (printf "configCli.configDir %q matched no .yaml/.yml/.json files; the path is relative to the chart root and files must not be excluded by .helmignore" .Values.configCli.configDir) }}
+  {{- end }}
+  {{- include "scoutid-keycloak.configMapData" (dict "files" $files "root" $) }}
   {{- end }}
 {{- end }}

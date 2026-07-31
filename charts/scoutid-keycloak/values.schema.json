@@ -87,7 +87,13 @@
             "passwordKey": { "type": "string", "minLength": 1 },
             "hook": { "type": "string", "enum": ["", "Sync", "PostSync", "PreSync", "Skip"] },
             "backoffLimit": { "type": "integer", "minimum": 0 },
-            "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 }
+            "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 },
+            "shell": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "resources": { "type": "object" }
           }
         }
       }
@@ -167,9 +173,22 @@
           "properties": {
             "enabled": { "type": "boolean" },
             "labels": { "type": "object" },
-            "interval": { "type": "string" },
-            "scrapeTimeout": { "type": "string" }
+            "port": { "type": "string", "minLength": 1 },
+            "path": { "type": "string", "minLength": 1 },
+            "interval": { "type": ["string", "null"] },
+            "scrapeTimeout": { "type": ["string", "null"] }
           }
+        }
+      }
+    },
+    "scoutid": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "realm": {
+          "type": "string",
+          "enum": ["", "scoutnet"],
+          "description": "The realm is fixed by the bundled config and is not configurable in this release. Leave empty to read it from there; \"scoutnet\" is accepted as an explicit restatement. To use a different realm, disable scoutid.enabled and supply your own config via configCli."
         }
       }
     },
@@ -187,14 +206,18 @@
         "extraEnvFrom": { "type": "array", "items": { "type": "object" } },
         "hook": { "type": "string", "enum": ["", "Sync", "PostSync", "PreSync", "Skip"] },
         "backoffLimit": { "type": "integer", "minimum": 0 },
-        "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 }
+        "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 },
+        "podSecurityContext": { "type": ["object", "null"] },
+        "securityContext": { "type": ["object", "null"] },
+        "resources": { "type": "object" }
       }
     },
     "cache": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
-        "stack": { "type": "string" }
+        "stack": { "type": "string" },
+        "jgroupsPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
       }
     },
     "initContainers": {
@@ -205,7 +228,11 @@
           "properties": {
             "enabled": { "type": "boolean" },
             "image": { "type": "string" },
-            "runAsUser": { "type": ["integer", "null"], "minimum": 0 }
+            "runAsUser": { "type": ["integer", "null"], "minimum": 0 },
+            "timeoutSeconds": { "type": "integer", "minimum": 1 },
+            "intervalSeconds": { "type": "integer", "minimum": 1 },
+            "command": { "type": "array", "items": { "type": "string" } },
+            "resources": { "type": "object" }
           }
         }
       }
@@ -218,8 +245,8 @@
         "annotations": { "type": "object" }
       }
     },
-    "podSecurityContext": { "type": "object" },
-    "securityContext": { "type": "object" },
+    "podSecurityContext": { "type": ["object", "null"] },
+    "securityContext": { "type": ["object", "null"] },
     "resources": { "type": "object" },
     "podDisruptionBudget": {
       "type": "object",

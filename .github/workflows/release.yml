@@ -39,6 +39,14 @@ jobs:
             helm template kc "$CHART" -f "$f" >/dev/null
           done
 
+      - name: ScoutID realm config must survive templating intact
+        run: |
+          helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db \
+            --set admin.bootstrap.existingSecret=kc-admin \
+            | python3 scripts/check-scoutid-config.py
+
       - name: Package
         run: helm package "$CHART" --destination dist/
 

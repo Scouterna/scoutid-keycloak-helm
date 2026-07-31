@@ -42,9 +42,26 @@ allowlist. Set ingress.admin.ipAllowList to restrict it.
 NOTE: no bootstrap admin secret is configured. This is correct for an existing
 database that already has an admin; a fresh database will have no way to log in.
 {{- end }}
+{{- if .Values.scoutid.enabled }}
+
+ScoutID realm config is applied to realm '{{ include "scoutid-keycloak.scoutidRealm" . }}' by the
+config-cli Job. Watch it complete before testing login:
+
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "scoutid-keycloak.fullname" . }}-config
+
+Then check the realm is serving:
+
+  curl -s {{ include "scoutid-keycloak.publicUrl" . }}/realms/{{ include "scoutid-keycloak.scoutidRealm" . }}/.well-known/openid-configuration
+
+The admin console lives in the 'master' realm, which is left stock.
+{{- else }}
+
+NOTE: scoutid.enabled=false — this is a plain Keycloak. No ScoutID login flow,
+no user profile schema, no ScoutID claims.
+{{- end }}
 {{- if .Values.configCli.enabled }}
 
-keycloak-config-cli is ENABLED and will apply realm config on each run.
+keycloak-config-cli is ENABLED and will apply your own realm config on each run.
 Renaming groups through it is destructive — see docs/configuration.md before
 changing group structure.
 {{- end }}

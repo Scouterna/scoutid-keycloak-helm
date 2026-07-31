@@ -1,0 +1,210 @@
+# ScoutID realm — identity settings and the user profile schema.
+#
+# Scoutnet is the credential authority: no self-registration, no password reset,
+# no email login. Keycloak never holds a password for these users.
+
+realm: scoutnet
+enabled: true
+
+accessTokenLifespan: 300          # 5 minutes
+ssoSessionIdleTimeout: 2592000    # 30 days
+ssoSessionMaxLifespan: 2592000    # 30 days
+
+loginTheme: scoutid
+adminTheme: keycloak.v2
+
+# Without this block Keycloak serves only the default locale and ignores
+# ui_locales/Accept-Language, even though the theme ships sv + en.
+internationalizationEnabled: true
+supportedLocales:
+  - sv
+  - en
+defaultLocale: sv
+
+registrationAllowed: false
+resetPasswordAllowed: false
+rememberMe: true
+loginWithEmailAllowed: false
+registrationEmailAsUsername: false
+duplicateEmailsAllowed: true      # group addresses are shared between members
+verifyEmail: false
+editUsernameAllowed: false
+
+attributes:
+  userProfileEnabled: "true"
+
+userProfile:
+  # The provider writes one group_email_<groupId> attribute per group; those names
+  # are dynamic and cannot be declared. Without a policy they are dropped.
+  unmanagedAttributePolicy: ADMIN_EDIT
+
+  groups:
+    - name: basic
+      displayHeader: Grunduppgifter
+    - name: contact
+      displayHeader: Kontaktuppgifter
+    - name: scout
+      displayHeader: Scoutuppgifter
+
+  attributes:
+    - name: username
+      displayName: ${username}
+      group: basic
+      validations:
+        length:
+          min: 3
+          max: 255
+        username-prohibited-characters: {}
+        up-username-not-idn-homograph: {}
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: email
+      displayName: ${email}
+      group: basic
+      validations:
+        email: {}
+        length:
+          max: 255
+      required:
+        roles: [user]
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: firstName
+      displayName: ${firstName}
+      group: basic
+      validations:
+        length:
+          max: 255
+        person-name-prohibited-characters: {}
+      required:
+        roles: [user]
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: lastName
+      displayName: ${lastName}
+      group: basic
+      validations:
+        length:
+          max: 255
+        person-name-prohibited-characters: {}
+      required:
+        roles: [user]
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: birthdate
+      displayName: Födelsedatum
+      group: basic
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: locale
+      displayName: Språk
+      group: basic
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: picture
+      displayName: Profilbild
+      group: basic
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: scouterna_email
+      displayName: Scouterna e-post
+      group: contact
+      validations:
+        email: {}
+        length:
+          max: 255
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: alt_email
+      displayName: Alternativ e-post
+      group: contact
+      validations:
+        email: {}
+        length:
+          max: 255
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: phone_number
+      displayName: Mobilnummer
+      group: contact
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: scoutnet_member_no
+      displayName: Medlemsnummer
+      group: scout
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: primary_group_name
+      displayName: Primär scoutkår
+      group: scout
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: primary_group_no
+      displayName: Primär scoutkår - ID
+      group: scout
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: memberships
+      displayName: Medlemskap och roller
+      group: scout
+      annotations:
+        inputType: textarea
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: group_emails_json
+      displayName: Kåre-postadresser
+      group: scout
+      annotations:
+        inputType: textarea
+      permissions:
+        view: [admin, user]
+        edit: [admin]
+
+    - name: firstlast
+      displayName: first.last
+      permissions:
+        view: [admin]
+        edit: [admin]
+
+    # Sync bookkeeping, written by the provider. Declared so they are not dropped
+    # on admin/account-console writes: scoutnet_profile_hash is the change-detection
+    # key, and losing it makes every login re-fetch the full profile.
+    - name: scoutnet_profile_hash
+      displayName: Scoutnet profil-hash
+      permissions:
+        view: [admin]
+        edit: [admin]
+
+    - name: scoutnet_last_fetch
+      displayName: Scoutnet senaste hämtning
+      permissions:
+        view: [admin]
+        edit: [admin]

@@ -1,8 +1,13 @@
 {{- $fullName := include "scoutid-keycloak.fullname" . -}}
 {{- $port := .Values.service.httpPort -}}
 {{- $isRoute := eq .Values.ingress.type "ingressroute" -}}
+{{/* Traefik CRDs are only expected when the cluster actually runs Traefik: either
+     ingressroute mode, or a plain Ingress whose class is traefik (where the admin
+     allowlist annotation references the Middleware below). Emitting a Middleware
+     anywhere else breaks install on clusters without traefik.io CRDs. */}}
+{{- $traefik := or $isRoute (and (eq .Values.ingress.type "ingress") (eq .Values.ingress.className "traefik")) -}}
 
-{{- if and .Values.ingress.admin.enabled .Values.ingress.admin.ipAllowList }}
+{{- if and $traefik .Values.ingress.admin.enabled .Values.ingress.admin.ipAllowList }}
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -45,7 +50,7 @@ spec:
     name: {{ .Values.ingress.clusterIssuer }}
     kind: ClusterIssuer
   dnsNames:
-    - {{ .Values.hostname.public }}
+    - {{ .Values.hostname.public | quote }}
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -58,8 +63,12 @@ spec:
     - {{ .Values.ingress.entryPoint }}
   routes:
     {{- if .Values.ingress.public.rootRedirect.enabled }}
+    # Explicit priority: Traefik derives priority from rule length, and
+    # PathPrefix(`/`) is longer than Path(`/`), so a catch-all path would otherwise
+    # win over this redirect and it would silently never fire.
     - kind: Rule
       match: Host(`{{ .Values.hostname.public }}`) && Path(`/`)
+      priority: 1000
       middlewares:
         - name: {{ $fullName }}-root-redirect
       services:
@@ -68,19 +77,14 @@ spec:
     {{- end }}
     {{- $paths := .Values.ingress.public.paths | default (list "/") }}
     {{- range $paths }}
-    {{- if eq . "/" }}
-    - kind: Rule
-      match: Host(`{{ $.Values.hostname.public }}`) && PathPrefix(`/`)
-      services:
-        - name: {{ $fullName }}
-          port: {{ $port }}
-    {{- else }}
     - kind: Rule
       match: Host(`{{ $.Values.hostname.public }}`) && PathPrefix(`{{ . }}`)
+      {{- if and (eq . "/") $.Values.ingress.public.rootRedirect.enabled }}
+      priority: 1
+      {{- end }}
       services:
         - name: {{ $fullName }}
           port: {{ $port }}
-    {{- end }}
     {{- end }}
   tls:
     secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
@@ -99,7 +103,7 @@ spec:
     name: {{ .Values.ingress.clusterIssuer }}
     kind: ClusterIssuer
   dnsNames:
-    - {{ .Values.hostname.admin }}
+    - {{ .Values.hostname.admin | quote }}
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

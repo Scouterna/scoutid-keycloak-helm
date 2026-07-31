@@ -45,13 +45,31 @@ spec:
       initContainers:
         - name: wait-for-db
           image: {{ .Values.initContainers.waitForDb.image }}
+          {{- with .Values.initContainers.waitForDb.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- else }}
+          # Requires sh and nc; override .command for an image without them.
           command:
             - sh
             - -c
             - |
-              until nc -z {{ include "scoutid-keycloak.dbHost" . }} {{ include "scoutid-keycloak.dbPort" . }}; do
-                echo "waiting for postgres..."; sleep 3;
+              host={{ include "scoutid-keycloak.dbHost" . | quote }}
+              port={{ include "scoutid-keycloak.dbPort" . | quote }}
+              timeout={{ .Values.initContainers.waitForDb.timeoutSeconds }}
+              interval={{ .Values.initContainers.waitForDb.intervalSeconds }}
+              elapsed=0
+              until nc -z "$host" "$port"; do
+                if [ "$elapsed" -ge "$timeout" ]; then
+                  echo "timed out after ${timeout}s waiting for $host:$port" >&2
+                  exit 1
+                fi
+                echo "waiting for postgres at $host:$port (${elapsed}s/${timeout}s)..."
+                sleep "$interval"
+                elapsed=$((elapsed + interval))
               done
+              echo "$host:$port is reachable"
+          {{- end }}
           securityContext:
             {{- with .Values.securityContext }}
             {{- toYaml . | nindent 12 }}
@@ -60,11 +78,7 @@ spec:
             runAsUser: {{ . }}
             {{- end }}
           resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              memory: 32Mi
+            {{- toYaml .Values.initContainers.waitForDb.resources | nindent 12 }}
       {{- end }}
       containers:
         - name: keycloak
@@ -86,7 +100,9 @@ spec:
                 secretKeyRef:
                   name: {{ include "scoutid-keycloak.dbSecretName" . }}
                   key: {{ .Values.database.credentials.usernameKey }}
-            # KCRAW_DB_PASSWORD is documented upstream but is not honoured by this image.
+            # Keycloak documents a KCRAW_-prefixed form (KCRAW_DB_PASSWORD) for passwords
+            # containing literal $ or ${...}. This image does not honour it — verified via
+            # `kc.sh show-config`, where kc.db-password never appears — so use KC_DB_PASSWORD.
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -122,9 +138,13 @@ spec:
             - name: KC_CACHE
               value: ispn
             - name: KC_CACHE_STACK
-              value: {{ .Values.cache.stack }}
+              value: {{ .Values.cache.stack | quote }}
+            {{- /* jgroups.tcp.port is what Keycloak honours; jgroups.bind_port is
+                   ignored. Both live in one JAVA_OPTS_APPEND because a second env
+                   var of the same name would replace this one, silently dropping
+                   the DNS query that discovery depends on. */}}
             - name: JAVA_OPTS_APPEND
-              value: "-Djgroups.dns.query={{ include "scoutid-keycloak.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              value: "-Djgroups.dns.query={{ include "scoutid-keycloak.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local -Djgroups.tcp.port={{ .Values.cache.jgroupsPort }}"
             {{- end }}
             {{- with .Values.keycloak.logLevel }}
             - name: KC_LOG_LEVEL
@@ -160,6 +180,12 @@ spec:
             - name: management
               containerPort: {{ .Values.service.managementPort }}
               protocol: TCP
+            {{- if .Values.cache.enabled }}
+            # JGroups cluster traffic; the headless Service targets this by name.
+            - name: jgroups
+              containerPort: {{ .Values.cache.jgroupsPort }}
+              protocol: TCP
+            {{- end }}
           {{- if .Values.startupProbe.enabled }}
           startupProbe:
             httpGet:
