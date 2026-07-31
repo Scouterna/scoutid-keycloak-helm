@@ -271,6 +271,10 @@ The security defaults suit the upstream image, which already runs as `nobody`
 (65534) and starts on a read-only root filesystem. A custom `configCli.image` that
 needs to write outside `/tmp` may need `readOnlyRootFilesystem: false`.
 
+To drop either block entirely, set it to `null` — Helm removes null-valued keys, so
+the field is omitted. An empty map (`{}`) does **not** work: Helm merges it with the
+defaults and the hardened settings survive.
+
 > **Variable substitution.** keycloak-config-cli ships with substitution *off*.
 > Without it, `secret: $(env:CLIENT_SECRET)` is stored as that literal string. The
 > failure is deeply misleading: ScoutID login succeeds and only the code-to-token
@@ -362,7 +366,7 @@ because Keycloak writes to `/opt/keycloak/data` at runtime.
 | `initContainers.waitForDb.runAsUser` | `65534` | busybox runs as UID 0 |
 | `initContainers.waitForDb.timeoutSeconds` | `300` | Fails the pod instead of waiting forever |
 | `initContainers.waitForDb.intervalSeconds` | `3` | |
-| `initContainers.waitForDb.command` | `[]` | Replaces the default probe entirely |
+| `initContainers.waitForDb.command` | `[]` | Replaces the default probe when non-empty; `[]` keeps the default |
 | `initContainers.waitForDb.resources` | 10m / 16Mi | |
 
 Off by default. It only makes the wait visible in the logs: Keycloak retries the

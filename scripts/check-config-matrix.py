@@ -102,10 +102,11 @@ def main():
             continue
 
         got = observe(stdout)
-        for key in ("configmap", "job", "mounts"):
-            if got[key] != want[key]:
-                print(f"::error::{label}: expected {key}={want[key]!r}, got {got[key]!r}")
-                failed += 1
+        mismatched = [key for key in ("configmap", "job", "mounts") if got[key] != want[key]]
+        for key in mismatched:
+            print(f"::error::{label}: expected {key}={want[key]!r}, got {got[key]!r}")
+        if mismatched:
+            failed += 1
         else:
             print(f"ok: {label} -> configmap={got['configmap']} job={got['job']} mounts={got['mounts']}")
 

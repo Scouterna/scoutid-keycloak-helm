@@ -207,8 +207,8 @@
         "hook": { "type": "string", "enum": ["", "Sync", "PostSync", "PreSync", "Skip"] },
         "backoffLimit": { "type": "integer", "minimum": 0 },
         "ttlSecondsAfterFinished": { "type": ["integer", "null"], "minimum": 0 },
-        "podSecurityContext": { "type": "object" },
-        "securityContext": { "type": "object" },
+        "podSecurityContext": { "type": ["object", "null"] },
+        "securityContext": { "type": ["object", "null"] },
         "resources": { "type": "object" }
       }
     },
@@ -245,8 +245,8 @@
         "annotations": { "type": "object" }
       }
     },
-    "podSecurityContext": { "type": "object" },
-    "securityContext": { "type": "object" },
+    "podSecurityContext": { "type": ["object", "null"] },
+    "securityContext": { "type": ["object", "null"] },
     "resources": { "type": "object" },
     "podDisruptionBudget": {
       "type": "object",
