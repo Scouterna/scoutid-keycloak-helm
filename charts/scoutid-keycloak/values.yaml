@@ -54,6 +54,15 @@ admin:
     hook: PostSync               # ArgoCD hook; "" renders a plain Job
     backoffLimit: 3
     ttlSecondsAfterFinished: 600
+    # The script is POSIX sh; override only if a custom image.repository puts its
+    # shell somewhere else. Must be a list, e.g. ["/busybox/sh", "-c"].
+    shell: ["/bin/sh", "-c"]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
 
 scoutnet:
   baseUrl: https://scoutnet.se
@@ -100,10 +109,22 @@ metrics:
     enabled: true
     labels:
       release: kps               # kube-prometheus-stack selector; wrong label = silently no metrics
-    interval: 30s
+    port: management             # must be a port name the Service exposes
+    path: /metrics
+    interval: 30s                # empty falls back to Prometheus' global default
     scrapeTimeout: 10s
 
-# keycloak-config-cli. Off by default: group renames are destructive even with
+# The ScoutID realm itself: browser flow, user profile schema, claim mappers.
+# Without this the chart deploys a stock Keycloak that merely contains the JARs.
+# The config is chart-owned and not modifiable through values in this release.
+scoutid:
+  enabled: true
+  # The realm is fixed by the bundled config. Leave empty to read it from there;
+  # setting a different value is rejected rather than silently ignored.
+  realm: ""
+
+# keycloak-config-cli. Applies scoutid config above, and/or your own from configDir.
+# Group renames through config-cli are destructive even with
 # IMPORT_MANAGED_GROUP=no-delete. See docs/configuration.md.
 configCli:
   enabled: false
@@ -118,10 +139,31 @@ configCli:
   hook: ""                       # "" | Sync | PostSync
   backoffLimit: 10
   ttlSecondsAfterFinished: 600
+  # The image already runs as nobody (65534) and starts on a read-only rootfs,
+  # so these defaults are safe. Set either to {} to drop the field entirely.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 
 cache:
   enabled: false                 # KC_CACHE=ispn + KUBE_PING; required for replicaCount > 1
   stack: kubernetes
+  # JGroups bind port. 7800 is the Keycloak/Infinispan default; change it only
+  # alongside a matching jgroups.bind_port override. JGroups also opens the
+  # failure-detection socket at this port + 50000 (57800), which needs no Service.
+  jgroupsPort: 7800
 
 initContainers:
   # Off by default: Keycloak retries the DB itself and startupProbe covers slow
@@ -130,6 +172,15 @@ initContainers:
     enabled: false
     image: docker.io/library/busybox:1.36
     runAsUser: 65534               # busybox is UID 0; runAsNonRoot would reject it
+    timeoutSeconds: 300            # fail the pod rather than wait forever
+    intervalSeconds: 3
+    command: []                    # default needs sh + nc; override for other images
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 32Mi
 
 serviceAccount:
   create: true
@@ -157,8 +208,10 @@ resources:
 
 podDisruptionBudget:
   enabled: false
+  # Set exactly one; both, or neither, is rejected at render time. Integer or
+  # percentage ("50%"). 0 is honoured: maxUnavailable: 0 blocks all evictions.
   minAvailable: 1
-  maxUnavailable: ""             # set one or the other, not both
+  maxUnavailable: ""
 
 startupProbe:
   enabled: true

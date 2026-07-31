@@ -22,6 +22,8 @@ spec:
         app.kubernetes.io/component: ensure-admin
     spec:
       restartPolicy: OnFailure
+      # Talks only to Keycloak's HTTP API, never to the Kubernetes API.
+      automountServiceAccountToken: false
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -38,13 +40,17 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          command: ["/bin/bash", "-c"]
+          command: {{ toJson .Values.admin.ensurePermanentAdmin.shell }}
           args:
             - |
-              set -euo pipefail
-              # $HOME is not writable in this image; kcadm needs an explicit config path.
+              set -eu
+              # kcadm writes access + refresh tokens (not the password) to its config
+              # file at 0600. Still a bearer credential, so keep it in a private temp
+              # file and shred it on exit rather than leaving a predictable path behind.
               KCADM="/opt/keycloak/bin/kcadm.sh"
-              CFG="--config /tmp/kcadm.config"
+              KCADM_CONFIG=$(mktemp)
+              trap 'rm -f "$KCADM_CONFIG"' EXIT INT TERM
+              CFG="--config $KCADM_CONFIG"
 
               $KCADM config credentials $CFG \
                 --server "{{ include "scoutid-keycloak.internalUrl" . }}" \
@@ -93,9 +99,5 @@ spec:
                   name: {{ .Values.admin.ensurePermanentAdmin.existingSecret }}
                   key: {{ .Values.admin.ensurePermanentAdmin.passwordKey }}
           resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              memory: 512Mi
+            {{- toYaml .Values.admin.ensurePermanentAdmin.resources | nindent 12 }}
 {{- end }}

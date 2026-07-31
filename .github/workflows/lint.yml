@@ -61,7 +61,148 @@ jobs:
           check "waitForDb with no resolvable host" --set hostname.public=id.example.se --set database.mode=external --set 'database.external.jdbcUrl=jdbc:postgresql://h:5432/d' --set database.credentials.existingSecret=s --set initContainers.waitForDb.enabled=true
           check "empty image.tag" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set image.tag=
           check "non-integer ttlSecondsAfterFinished" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set configCli.ttlSecondsAfterFinished=600s
+          check "scoutid config without a bootstrap admin secret" --set hostname.public=id.example.se --set database.cnpg.clusterName=db
+          check "scoutid config plus existingConfigMap" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set configCli.existingConfigMap=mine
+          check "scoutid.realm disagreeing with the bundled config" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set scoutid.realm=not-scoutnet
+          check "configDir together with existingConfigMap" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set scoutid.enabled=false --set configCli.enabled=true --set configCli.configDir=scoutid-config --set configCli.existingConfigMap=mine
           exit $fail
+
+      - name: Reported realm must equal the realm actually imported
+        run: |
+          out=$(helm install --dry-run=client kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db \
+            --set admin.bootstrap.existingSecret=kc-admin)
+          imported=$(sed -n '/^  01-realm.yaml/,/^  02-/p' <<<"$out" | grep -oE '^    realm: [a-z-]+' | awk '{print $2}' | head -1)
+          reported=$(grep -oE "realms/[a-z-]+/\.well-known" <<<"$out" | head -1 | cut -d/ -f2)
+          echo "imported=$imported reported=$reported"
+          if [ -z "$imported" ] || [ "$imported" != "$reported" ]; then
+            echo "::error::NOTES reports realm '$reported' but the config imports '$imported'"
+            exit 1
+          fi
+          echo "ok: reported realm matches the imported realm"
+
+      - name: ScoutID realm config must survive templating intact
+        run: |
+          helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db \
+            --set admin.bootstrap.existingSecret=kc-admin \
+            | python3 scripts/check-scoutid-config.py
+
+      - name: Config-source combinations must behave as specified
+        run: python3 scripts/check-config-matrix.py
+
+      - name: configDir must mount only parseable config files
+        run: python3 scripts/check-configdir-glob.py
+
+      - name: PodDisruptionBudget must render exactly one budget field
+        run: python3 scripts/check-pdb.py
+
+      - name: Named Service targetPorts must resolve to a container port
+        run: |
+          fail=0
+          for extra in "--set cache.enabled=true --set replicaCount=2" ""; do
+            if ! helm template kc "$CHART" \
+              --set hostname.public=id.example.se \
+              --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+              $extra | python3 scripts/check-service-ports.py; then
+              echo "::error::dangling targetPort with: ${extra:-defaults}"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Ingress must survive wildcard hosts and annotation overrides
+        run: |
+          fail=0
+          # An unquoted "*" is a YAML alias, and it is not a legal resource name —
+          # so both the host fields and the derived TLS secret names must handle it.
+          for t in ingress ingressroute; do
+            if ! helm template kc "$CHART" \
+              --set 'hostname.public=*.example.com' \
+              --set 'hostname.admin=*.admin.example.com' \
+              --set ingress.admin.enabled=true \
+              --set "ingress.type=$t" \
+              --set database.cnpg.clusterName=db \
+              --set admin.bootstrap.existingSecret=a >/dev/null 2>&1; then
+              echo "::error::ingress.type=$t fails to render with a wildcard host"
+              fail=1
+            else
+              echo "ok: ingress.type=$t renders with a wildcard host"
+            fi
+          done
+          # A user-supplied cluster-issuer annotation must replace the chart's, not
+          # emit the key twice (duplicate keys are rejected by strict parsers).
+          dupes=$(helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db \
+            --set admin.bootstrap.existingSecret=a \
+            --set 'ingress.annotations.cert-manager\.io/cluster-issuer=mine' \
+            | grep -c 'cert-manager.io/cluster-issuer:')
+          if [ "$dupes" -ne 1 ]; then
+            echo "::error::expected exactly 1 cluster-issuer annotation, found $dupes"
+            fail=1
+          else
+            echo "ok: annotation overrides do not duplicate keys"
+          fi
+          exit $fail
+
+      - name: Traefik CRDs only where Traefik is in use
+        run: |
+          fail=0
+          # A traefik.io Middleware on a cluster without the Traefik CRDs fails the
+          # install outright, so it must never render for a non-Traefik setup.
+          count() {
+            helm template kc "$CHART" \
+              --set hostname.public=id.example.se --set hostname.admin=admin.id.example.se \
+              --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+              --set ingress.admin.enabled=true --set 'ingress.admin.ipAllowList={10.0.0.0/8}' \
+              "$@" 2>/dev/null | grep -c 'traefik.io' || true
+          }
+          for spec in "ingress:1" "ingressroute:3" "none:0"; do
+            mode=${spec%%:*}; want=${spec##*:}
+            got=$(count --set "ingress.type=$mode")
+            if [ "$got" != "$want" ]; then
+              echo "::error::ingress.type=$mode rendered $got traefik.io objects, expected $want"
+              fail=1
+            else
+              echo "ok: ingress.type=$mode -> $got traefik.io objects"
+            fi
+          done
+          exit $fail
+
+      - name: Root redirect must outrank a catch-all path
+        run: |
+          helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set ingress.type=ingressroute \
+            --set ingress.public.rootRedirect.enabled=true \
+            --set 'ingress.public.paths={/}' \
+            | python3 scripts/check-route-priority.py
+
+      - name: Jobs must not mount a Kubernetes service account token
+        run: |
+          # Neither Job talks to the Kubernetes API; both authenticate to Keycloak
+          # over HTTP. A mounted token is credential exposure for no benefit.
+          helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set admin.ensurePermanentAdmin.enabled=true \
+            --set admin.ensurePermanentAdmin.existingSecret=perm \
+            | python3 scripts/check-job-hardening.py
+
+      - name: Job must never emit an empty annotations map
+        run: |
+          # With an existingConfigMap there is no checksum to write, and a bare
+          # "annotations:" key parses as null rather than a map.
+          helm template kc "$CHART" \
+            --set hostname.public=id.example.se \
+            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set scoutid.enabled=false --set configCli.enabled=true \
+            --set configCli.existingConfigMap=mine \
+            | python3 scripts/check-job-annotations.py
 
       - name: Assert load-bearing details survive rendering
         run: |
@@ -117,9 +258,16 @@ jobs:
         run: |
           # Traefik/cert-manager/Prometheus CRDs are not in the default schema set;
           # -ignore-missing-schemas skips them but still validates core objects.
+          fail=0
           for f in examples/values-*.yaml; do
             echo "::group::$f"
-            helm template kc "$CHART" -f "$f" \
-              | kubeconform -strict -ignore-missing-schemas -summary
+            # -summary reports Errors separately from Invalid; a YAML-level problem
+            # (duplicate keys, a missing document separator) shows up as an Error.
+            if ! helm template kc "$CHART" -f "$f" \
+              | kubeconform -strict -ignore-missing-schemas -summary; then
+              echo "::error file=$f::kubeconform reported invalid or unparseable manifests"
+              fail=1
+            fi
             echo "::endgroup::"
           done
+          exit $fail

@@ -36,8 +36,9 @@ spec:
   selector:
     {{- include "scoutid-keycloak.selectorLabels" . | nindent 4 }}
   ports:
+    # Named targetPort so this cannot drift from the container's declared port.
     - name: tcp-jgroups
-      port: 7800
-      targetPort: 7800
+      port: {{ .Values.cache.jgroupsPort }}
+      targetPort: jgroups
       protocol: TCP
 {{- end }}

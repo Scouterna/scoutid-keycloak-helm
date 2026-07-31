@@ -2,6 +2,8 @@
 {{- $fullName := include "scoutid-keycloak.fullname" . -}}
 {{- $port := .Values.service.httpPort -}}
 {{- if .Values.ingress.public.enabled }}
+{{/* User annotations win over the chart's defaults; merged so a key is emitted once. */}}
+{{- $publicAnnotations := merge (dict) .Values.ingress.annotations (dict "cert-manager.io/cluster-issuer" .Values.ingress.clusterIssuer) -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,23 +11,20 @@ metadata:
   labels:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- toYaml $publicAnnotations | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   tls:
     - hosts:
-        - {{ .Values.hostname.public }}
+        - {{ .Values.hostname.public | quote }}
       secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
   rules:
-    - host: {{ .Values.hostname.public }}
+    - host: {{ .Values.hostname.public | quote }}
       http:
         paths:
           {{- $paths := .Values.ingress.public.paths | default (list "/") }}
           {{- range $paths }}
-          - path: {{ . }}
+          - path: {{ . | quote }}
             pathType: Prefix
             backend:
               service:
@@ -35,6 +34,13 @@ spec:
           {{- end }}
 {{- end }}
 {{- if .Values.ingress.admin.enabled }}
+{{- $adminAnnotations := dict "cert-manager.io/cluster-issuer" .Values.ingress.clusterIssuer -}}
+{{- if .Values.ingress.admin.ipAllowList -}}
+{{/* Traefik-only; a non-Traefik ingress.className with an ipAllowList is rejected
+     in _helpers.tpl rather than silently emitting an annotation nobody reads. */}}
+{{- $_ := set $adminAnnotations "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s-admin-ipallowlist@kubernetescrd" .Release.Namespace $fullName) -}}
+{{- end -}}
+{{- $adminAnnotations = merge (dict) .Values.ingress.annotations $adminAnnotations }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -43,25 +49,18 @@ metadata:
   labels:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
-    {{- with .Values.ingress.admin.ipAllowList }}
-    # Traefik reads this annotation; on nginx use nginx.ingress.kubernetes.io/whitelist-source-range.
-    traefik.ingress.kubernetes.io/router.middlewares: {{ $.Release.Namespace }}-{{ $fullName }}-admin-ipallowlist@kubernetescrd
-    {{- end }}
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- toYaml $adminAnnotations | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   tls:
     - hosts:
-        - {{ .Values.hostname.admin }}
+        - {{ .Values.hostname.admin | quote }}
       secretName: {{ include "scoutid-keycloak.adminTlsSecret" . }}
   rules:
-    - host: {{ .Values.hostname.admin }}
+    - host: {{ .Values.hostname.admin | quote }}
       http:
         paths:
-          - path: /
+          - path: "/"
             pathType: Prefix
             backend:
               service:

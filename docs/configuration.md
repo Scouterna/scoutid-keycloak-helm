@@ -108,6 +108,8 @@ does not apply to CloudNativePG.
 | `admin.bootstrap.passwordKey` | `KC_BOOTSTRAP_ADMIN_PASSWORD` | |
 | `admin.ensurePermanentAdmin.enabled` | `false` | Runs a `kcadm` Job |
 | `admin.ensurePermanentAdmin.hook` | `PostSync` | ArgoCD hook; `""` for a plain Job |
+| `admin.ensurePermanentAdmin.shell` | `["/bin/sh", "-c"]` | Override for images with a different shell path |
+| `admin.ensurePermanentAdmin.resources` | 50m/128Mi, limit 512Mi | |
 
 The bootstrap admin is a *bootstrap* credential: Keycloak honours it only while the
 master realm has no admin. `ensurePermanentAdmin` runs an idempotent Job that creates
@@ -152,8 +154,17 @@ looks like a restriction while allowing everything.
 | `metrics.enabled` | `true` | |
 | `metrics.serviceMonitor.enabled` | `true` | Needs the Prometheus operator CRDs |
 | `metrics.serviceMonitor.labels` | `{release: kps}` | Must match the Prometheus selector |
+| `metrics.serviceMonitor.port` | `management` | Must be a port name the Service exposes |
+| `metrics.serviceMonitor.path` | `/metrics` | |
+| `metrics.serviceMonitor.interval` | `30s` | Omitted when empty |
+| `metrics.serviceMonitor.scrapeTimeout` | `10s` | Omitted when empty |
 
 Metrics are served on the management port (9000), not the HTTP port.
+
+A `port` the Service does not expose is rejected at render time — the API server
+would accept such a ServiceMonitor and it would simply scrape nothing. Setting
+`interval` or `scrapeTimeout` to null omits the key rather than emitting a blank
+one, so Prometheus applies its own global default instead of an empty value.
 
 The `release: kps` label is load-bearing on the Scouterna clusters: Prometheus selects
 ServiceMonitors with `serviceMonitorSelector.matchLabels.release=kps`, and a monitor
@@ -161,21 +172,104 @@ without it is **ignored silently** — no error anywhere, just no metrics. On a 
 whose selector differs, change this label. Where there is no Prometheus operator, set
 `metrics.serviceMonitor.enabled: false`.
 
-## Realm configuration (keycloak-config-cli)
+## The ScoutID realm
+
+| Value | Default | Notes |
+|---|---|---|
+| `scoutid.enabled` | `true` | Applies the bundled ScoutID realm configuration |
+| `scoutid.realm` | `""` | Empty reads the realm from the bundled config; a value that disagrees is rejected |
+
+This is what makes the deployment *ScoutID* rather than a stock Keycloak that happens
+to contain the provider JARs. With it disabled you get a plain Keycloak: no ScoutID
+login flow, no user-profile schema, no ScoutID claims.
+
+The configuration lives in the chart at `scoutid-config/` and is applied by the
+keycloak-config-cli Job. It is **chart-owned in this release** — there are no values
+for changing its content. Treat a chart upgrade as the way realm configuration
+changes.
+
+It configures the **`scoutnet`** realm and leaves `master` stock, so Keycloak
+administrators stay separate from ScoutID members. This matches the existing
+`dev.id.scouterna.se` deployment.
+
+The realm name is fixed by the bundled files, not by a value. `scoutid.realm` exists
+only so tooling can read it: left empty the chart derives it from the config itself,
+and a value that disagrees is rejected at render time rather than producing output
+that names one realm while importing another. To run ScoutID in a different realm,
+disable `scoutid.enabled` and supply your own config through `configCli`.
+
+What it contains:
+
+- **`01-realm.yaml`** — theme `scoutid`, Swedish/English with `sv` default, token and
+  session lifetimes, and the full user-profile schema. Scoutnet is the credential
+  authority, so self-registration, password reset and email login are all off.
+- **`02-authentication.yaml`** — the `ScoutID browser login` flow (cookie
+  re-authenticator, falling back to the interactive Scoutnet authenticator) bound as
+  the realm's browser flow.
+- **`03-scopes.yaml`** — the claims contract: `profile`, `email` and `phone` extended
+  with the ScoutID attributes, plus the custom `scoutnet-memberships` scope.
+- **`04-clients.yaml`** — `account` (needs the scopes to render attributes) and
+  `security-admin-console` (pinned to the built-in browser flow).
+
+Relying-party clients are **not** included. They carry per-environment secrets and
+redirect URIs, so they are registered separately.
+
+`admin.bootstrap.existingSecret` is required while this is enabled — config-cli
+authenticates as that admin.
+
+### Two things in here that fail silently
+
+**Standard OIDC claims and full-state scopes.** keycloak-config-cli replaces *all*
+protocol mappers on a scope it manages. The mappers listed become the complete set,
+and anything unlisted is deleted. So `03-scopes.yaml` re-declares every standard
+Keycloak mapper alongside the ScoutID ones. Omit them and `preferred_username`,
+`given_name` and `family_name` disappear from every token while the import still
+reports success. Both the upstream provider repo and the J26 deployment hit this
+independently. If you fork this config, keep the built-in mappers.
+
+**Unmanaged attributes.** The provider writes one `group_email_<groupId>` attribute
+per group. Those names are dynamic and cannot be declared, so the realm sets
+`unmanagedAttributePolicy: ADMIN_EDIT`; without a policy Keycloak 26 discards them.
+`scoutnet_profile_hash` and `scoutnet_last_fetch` are declared explicitly — the hash
+is the sync change-detection key, and losing it makes every login re-fetch the whole
+profile.
+
+### Known deviation: the `phone` scope on `account`
+
+`04-clients.yaml` lists `phone` among the `account` client's default scopes, but
+Keycloak ships `phone` as a realm-level *optional* scope and keycloak-config-cli does
+not move it, so it ends up optional on that client. The claims contract is unaffected
+— `phone` stays in `scopes_supported` and any client requesting `scope=phone` still
+receives `phone_number`. Only the account console's default set differs from what the
+file states. Add it as a default scope by hand if the account console needs to show
+the phone number without an explicit request.
+
+## Bringing your own realm configuration (keycloak-config-cli)
 
 | Value | Default | Notes |
 |---|---|---|
 | `configCli.enabled` | `false` | |
 | `configCli.image` | `adorsys/keycloak-config-cli:6.5.1-26` | Pin to the Keycloak major |
 | `configCli.varSubstitution` | `true` | Chart default; the tool's own default is off |
-| `configCli.configDir` | `""` | Path inside the chart, globbed into a ConfigMap |
+| `configCli.configDir` | `""` | Path inside the chart; `*.yaml`/`*.yml`/`*.json` globbed into a ConfigMap |
 | `configCli.existingConfigMap` | `""` | Use a ConfigMap you manage |
 | `configCli.managedGroup` | `no-delete` | See the warning below |
 | `configCli.hook` | `""` | `Sync` re-applies on every ArgoCD sync |
+| `configCli.resources` | 50m/256Mi, limit 512Mi | |
+| `configCli.podSecurityContext` | `runAsNonRoot`, `RuntimeDefault` | Set to `null` to omit |
+| `configCli.securityContext` | no privilege escalation, read-only rootfs, all caps dropped | Set to `null` to omit |
 
 `configDir` is globbed with `.Files.Glob` into a ConfigMap, which removes the manual
 `kubectl create configmap --from-file` regeneration step the kustomize setup needed.
-A checksum annotation re-runs the Job when the config changes.
+Only `.yaml`, `.yml` and `.json` files are picked up, so a README or an editor backup
+living in that directory is not mounted as realm config.
+A checksum annotation re-runs the Job when the config changes — with
+`existingConfigMap` the chart cannot see the content, so no checksum is written and
+the Job does not restart on its own.
+
+The security defaults suit the upstream image, which already runs as `nobody`
+(65534) and starts on a read-only root filesystem. A custom `configCli.image` that
+needs to write outside `/tmp` may need `readOnlyRootFilesystem: false`.
 
 > **Variable substitution.** keycloak-config-cli ships with substitution *off*.
 > Without it, `secret: $(env:CLIENT_SECRET)` is stored as that literal string. The
@@ -189,7 +283,21 @@ A checksum annotation re-runs the Job when the config changes.
 > `IMPORT_MANAGED_GROUP=no-delete` does **not** protect against this — it only guards
 > undeclared *top-level* groups. Safe procedures: suspend the sync, rename, then
 > re-sync; or rename in place with `kcadm` (which preserves the group UUID) and update
-> the config afterwards. This is why `configCli.enabled` defaults to `false`.
+> the config afterwards. This is why `configCli.enabled` defaults to `false` — the
+> bundled ScoutID config declares no groups, so it is unaffected.
+
+`configCli.enabled` adds *your* configuration on top of the bundled ScoutID files;
+both land in one ConfigMap, applied in filename order. Name your files so they sort
+after the bundled `01-`–`04-` ones (e.g. `10-clients.yaml`); a filename that collides
+with a bundled file is rejected at render time rather than silently replacing it.
+`configCli.existingConfigMap` replaces the config entirely, so it cannot be combined
+with `scoutid.enabled`, nor with `configCli.configDir` — the ConfigMap would win and
+the directory would be ignored, leaving your files unapplied. Both combinations are
+rejected at render time.
+
+`scripts/check-config-matrix.py` pins the behaviour of all sixteen combinations of
+these flags — which ConfigMap is built, whether the Job runs, and what it mounts — and
+runs in CI.
 
 ### ArgoCD and Jobs
 
@@ -205,6 +313,7 @@ after completion and then reported `OutOfSync/Missing` forever. Either set a hoo
 | `replicaCount` | `1` | |
 | `cache.enabled` | `false` | `KC_CACHE=ispn` + JGroups discovery |
 | `cache.stack` | `kubernetes` | |
+| `cache.jgroupsPort` | `7800` | Container port and headless Service port |
 
 `replicaCount > 1` without `cache.enabled` is rejected at render time. Without
 Infinispan replication each replica keeps its own session cache, so users are logged
@@ -213,6 +322,30 @@ a headless service for JGroups discovery and switches the strategy to `RollingUp
 
 Single-replica is the proven configuration. Multi-replica has not been exercised on
 these clusters.
+
+`cache.jgroupsPort` drives both the container port and the headless Service, so the
+two cannot drift. JGroups additionally opens its failure-detection socket at that
+port + 50000 (57800 by default); that one is peer-to-peer and needs no Service entry.
+Changing the port also requires a matching `-Djgroups.tcp.port=<port>` in
+`extraJavaOpts` — Keycloak does not read this value. (`jgroups.bind_port` is the
+JGroups-level name and is *not* honoured here; verified against the image.)
+
+### Disruption budget
+
+| Value | Default | Notes |
+|---|---|---|
+| `podDisruptionBudget.enabled` | `false` | |
+| `podDisruptionBudget.minAvailable` | `1` | Integer or percentage |
+| `podDisruptionBudget.maxUnavailable` | `""` | Integer or percentage |
+
+Set exactly one of the two. The API server rejects a PDB carrying both
+(`minAvailable and maxUnavailable cannot be both set`), and one carrying neither
+silently defaults to `minAvailable: 0` — a budget that permits every eviction. Both
+cases are rejected at render time instead.
+
+`0` is a meaningful value and is preserved: `maxUnavailable: 0` blocks every
+voluntary eviction. Note that a PDB at `minAvailable: 1` with `replicaCount: 1`
+blocks node drains entirely, which is usually not what you want.
 
 ## Security context
 
@@ -225,20 +358,31 @@ because Keycloak writes to `/opt/keycloak/data` at runtime.
 | Value | Default | Notes |
 |---|---|---|
 | `initContainers.waitForDb.enabled` | `false` | |
-| `initContainers.waitForDb.image` | `busybox:1.36` | |
+| `initContainers.waitForDb.image` | `busybox:1.36` | Default command needs `sh` and `nc` |
 | `initContainers.waitForDb.runAsUser` | `65534` | busybox runs as UID 0 |
+| `initContainers.waitForDb.timeoutSeconds` | `300` | Fails the pod instead of waiting forever |
+| `initContainers.waitForDb.intervalSeconds` | `3` | |
+| `initContainers.waitForDb.command` | `[]` | Replaces the default probe entirely |
+| `initContainers.waitForDb.resources` | 10m / 16Mi | |
 
 Off by default. It only makes the wait visible in the logs: Keycloak retries the
 database connection itself, and `startupProbe.failureThreshold: 60` already allows
 about ten minutes for a slow first boot.
 
-Two things to know if you enable it. The busybox image runs as UID 0, which
+Three things to know if you enable it. The busybox image runs as UID 0, which
 `runAsNonRoot: true` rejects with `CreateContainerConfigError` — the pod never
 starts, and the message points at the init container rather than at the security
-context. `runAsUser: 65534` is applied by default to prevent that. And because it
+context. `runAsUser: 65534` is applied by default to prevent that. Because it
 resolves a host itself, it cannot be used with a bare `database.external.jdbcUrl`
 (no host is exposed to derive); that combination is rejected at render time rather
-than rendering a loop that waits forever on port 5432 of nothing.
+than rendering a loop that waits forever on port 5432 of nothing. And the wait is
+bounded by `timeoutSeconds`: on expiry the container exits non-zero with the host and
+port in the message, so a DNS, NetworkPolicy or wrong-host problem surfaces as a
+failing pod rather than one stuck in `Init:` indefinitely.
+
+The default command assumes `sh` and `nc` are present. Set
+`initContainers.waitForDb.command` to replace it wholesale for an image that has
+neither — the chart then makes no assumption about the image's contents.
 
 ## Resources
 

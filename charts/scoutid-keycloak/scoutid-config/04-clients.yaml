@@ -1,0 +1,22 @@
+# Built-in clients only. Relying parties are registered per environment with their
+# own secrets and redirect URIs — they are deliberately not part of this chart.
+
+realm: scoutnet
+
+clients:
+  # The account console needs the ScoutID scopes to render the custom attributes.
+  - clientId: account
+    defaultClientScopes:
+      - profile
+      - email
+      - phone
+      - scoutnet-memberships
+
+  # Keep the admin console on the built-in browser flow. browserFlow above points at
+  # the ScoutID flow, which authenticates against Scoutnet — without this override
+  # there is no way to log into the admin console.
+  - clientId: security-admin-console
+    authenticationFlowBindingOverrides:
+      browser: browser
+    attributes:
+      login_theme: keycloak.v2

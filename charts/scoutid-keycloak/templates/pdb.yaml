@@ -6,11 +6,18 @@ metadata:
   labels:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
 spec:
-  {{- with .Values.podDisruptionBudget.minAvailable }}
-  minAvailable: {{ . }}
+  {{- /* Compared against "" rather than using `with`, so a numeric 0 still renders:
+         maxUnavailable: 0 (block every voluntary eviction) is a real setting, and
+         `with` would treat it as empty and silently drop the field. */}}
+  {{- $min := .Values.podDisruptionBudget.minAvailable }}
+  {{- $max := .Values.podDisruptionBudget.maxUnavailable }}
+  {{- $hasMin := and (not (kindIs "invalid" $min)) (ne (toString $min) "") }}
+  {{- $hasMax := and (not (kindIs "invalid" $max)) (ne (toString $max) "") }}
+  {{- if $hasMin }}
+  minAvailable: {{ $min }}
   {{- end }}
-  {{- with .Values.podDisruptionBudget.maxUnavailable }}
-  maxUnavailable: {{ . }}
+  {{- if $hasMax }}
+  maxUnavailable: {{ $max }}
   {{- end }}
   selector:
     matchLabels:

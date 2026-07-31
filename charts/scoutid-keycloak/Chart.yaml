@@ -2,7 +2,7 @@ apiVersion: v2
 name: scoutid-keycloak
 description: ScoutID Keycloak — Keycloak with the Scoutnet authenticator and ScoutID theme.
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "26.5.6"
 home: https://github.com/Scouterna/scoutid-keycloak-helm
 sources:

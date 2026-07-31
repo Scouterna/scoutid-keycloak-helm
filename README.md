@@ -35,6 +35,20 @@ admin:
 
 Worked examples for several platforms are in [`examples/`](examples/).
 
+## What you get
+
+The chart ships the ScoutID realm configuration, so an install produces a working
+ScoutID rather than a bare Keycloak: the ScoutID browser login flow against Scoutnet,
+the `scoutid` login theme, the ScoutID user-profile schema, and the claims contract
+(`scoutnet_member_no`, `memberships`, `primary_group_no`, `scoutnet-memberships`
+scope, …).
+
+It configures the **`scoutnet`** realm and leaves `master` stock for Keycloak
+administrators. Set `scoutid.enabled: false` for a plain Keycloak.
+
+Relying-party clients are not included — they carry per-environment secrets and are
+registered separately. See [docs/configuration.md](docs/configuration.md).
+
 ## What the chart does not do
 
 - **It never templates secret material.** Every credential is referenced from an

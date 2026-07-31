@@ -1,0 +1,33 @@
+# ScoutID browser login flow.
+#
+# Two ALTERNATIVE executions: the cookie re-authenticator answers first if a valid
+# Scoutnet session cookie is present, otherwise the interactive authenticator runs.
+# Both IDs are registered by the provider JAR — see ScoutnetCookieAuthenticatorFactory
+# and ScoutnetAuthenticatorFactory.
+
+realm: scoutnet
+
+authenticationFlows:
+  - alias: "ScoutID browser login"
+    description: "ScoutID browser login flow"
+    providerId: basic-flow
+    topLevel: true
+    builtIn: false
+    authenticationExecutions:
+      - authenticatorFlow: false
+        authenticator: scoutnet-cookie-authenticator
+        requirement: ALTERNATIVE
+        priority: 10
+        authenticatorConfig: scoutid-cookie-config
+      - authenticatorFlow: false
+        authenticator: scoutnet-authenticator
+        requirement: ALTERNATIVE
+        priority: 20
+
+authenticatorConfig:
+  - alias: scoutid-cookie-config
+    config:
+      # 0 = always re-fetch from Scoutnet.
+      scoutnet.fetch.interval.minutes: "60"
+
+browserFlow: "ScoutID browser login"
