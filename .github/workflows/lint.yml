@@ -68,19 +68,7 @@ jobs:
           exit $fail
 
       - name: Reported realm must equal the realm actually imported
-        run: |
-          out=$(helm install --dry-run=client kc "$CHART" \
-            --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db \
-            --set admin.bootstrap.existingSecret=kc-admin)
-          imported=$(sed -n '/^  01-realm.yaml/,/^  02-/p' <<<"$out" | grep -oE '^    realm: [a-z-]+' | awk '{print $2}' | head -1)
-          reported=$(grep -oE "realms/[a-z-]+/\.well-known" <<<"$out" | head -1 | cut -d/ -f2)
-          echo "imported=$imported reported=$reported"
-          if [ -z "$imported" ] || [ "$imported" != "$reported" ]; then
-            echo "::error::NOTES reports realm '$reported' but the config imports '$imported'"
-            exit 1
-          fi
-          echo "ok: reported realm matches the imported realm"
+        run: python3 scripts/check-notes-realm.py
 
       - name: ScoutID realm config must survive templating intact
         run: |
