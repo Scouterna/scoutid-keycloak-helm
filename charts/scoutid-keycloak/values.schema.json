@@ -200,6 +200,7 @@
         "varSubstitution": { "type": "boolean" },
         "configDir": { "type": "string" },
         "existingConfigMap": { "type": "string" },
+        "managedClient": { "type": "string", "enum": ["full", "no-delete"] },
         "managedGroup": { "type": "string", "enum": ["full", "no-delete"] },
         "availabilityCheckTimeout": { "type": "string" },
         "extraEnv": { "type": "array", "items": { "type": "object" } },

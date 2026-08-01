@@ -152,6 +152,19 @@ file fails at `helm template` rather than at runtime.
 {{- fail (printf "metrics.serviceMonitor.port %q is not a port exposed by the Service (http, management); the ServiceMonitor would silently scrape nothing" $port) -}}
 {{- end -}}
 {{- end -}}
+{{/* Clients are registered by operators and kår groups are synced by the Scoutnet
+     provider; neither is declared in Git. keycloak-config-cli deletes whatever the
+     config files do not declare, and it does so silently — a verified run with
+     managedGroup=full removed every kår subgroup and logged nothing. Refuse to
+     render rather than hand someone a Job that quietly destroys live data. */}}
+{{- if or .Values.scoutid.enabled .Values.configCli.enabled -}}
+{{- if eq .Values.configCli.managedClient "full" -}}
+{{- fail "configCli.managedClient=full deletes every client not declared in the config files, including relying parties registered by operators. Use no-delete." -}}
+{{- end -}}
+{{- if eq .Values.configCli.managedGroup "full" -}}
+{{- fail "configCli.managedGroup=full deletes every group not declared in the config files, including the kår groups the Scoutnet provider creates at login, and the user memberships attached to them. Use no-delete." -}}
+{{- end -}}
+{{- end -}}
 {{/* The API server rejects a PodDisruptionBudget carrying both fields
      ("minAvailable and maxUnavailable cannot be both set"), and a PDB with neither
      defaults to minAvailable: 0 — a budget that permits every eviction. Both fail

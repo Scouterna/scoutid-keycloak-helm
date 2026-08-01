@@ -69,6 +69,12 @@ spec:
             # Off by default in the tool: without it, $(env:X) is stored as a literal.
             - name: IMPORT_VARSUBSTITUTION_ENABLED
               value: {{ .Values.configCli.varSubstitution | quote }}
+            # Both default to "full" in the tool, which deletes anything the config
+            # files do not declare. Clients are operator-owned and groups are
+            # provider-synced, so neither may be pruned. Set explicitly rather than
+            # relying on the partial-document layout to spare them.
+            - name: IMPORT_MANAGED_CLIENT
+              value: {{ .Values.configCli.managedClient | quote }}
             - name: IMPORT_MANAGED_GROUP
               value: {{ .Values.configCli.managedGroup | quote }}
             {{- with .Values.configCli.extraEnv }}

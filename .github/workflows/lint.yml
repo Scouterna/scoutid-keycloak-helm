@@ -84,6 +84,9 @@ jobs:
       - name: configDir must mount only parseable config files
         run: python3 scripts/check-configdir-glob.py
 
+      - name: Config-cli must not prune clients or groups
+        run: python3 scripts/check-managed-state.py
+
       - name: PodDisruptionBudget must render exactly one budget field
         run: python3 scripts/check-pdb.py
 

@@ -253,7 +253,8 @@ the phone number without an explicit request.
 | `configCli.varSubstitution` | `true` | Chart default; the tool's own default is off |
 | `configCli.configDir` | `""` | Path inside the chart; `*.yaml`/`*.yml`/`*.json` globbed into a ConfigMap |
 | `configCli.existingConfigMap` | `""` | Use a ConfigMap you manage |
-| `configCli.managedGroup` | `no-delete` | See the warning below |
+| `configCli.managedClient` | `no-delete` | Operator-owned; `full` is rejected |
+| `configCli.managedGroup` | `no-delete` | Provider-owned; `full` is rejected |
 | `configCli.hook` | `""` | `Sync` re-applies on every ArgoCD sync |
 | `configCli.resources` | 50m/256Mi, limit 512Mi | |
 | `configCli.podSecurityContext` | `runAsNonRoot`, `RuntimeDefault` | Set to `null` to omit |
@@ -281,6 +282,34 @@ defaults and the hardened settings survive.
 > exchange fails with `unauthorized_client`, so the application's secret looks
 > correct — because it is. Keycloak is holding the placeholder. The chart defaults
 > this to `true`.
+
+### Who owns what
+
+keycloak-config-cli manages each resource type in **full** state by default:
+anything the config files do not declare is deleted. That is deliberate for most of
+the realm — Git is the source of truth and a hand-edit in the admin console is meant
+to be overwritten on the next sync. Two resource types are not owned by Git:
+
+| Resource | Owner | On sync |
+|---|---|---|
+| Realm settings, authentication flows, client scopes, protocol mappers, user profile | **Git** | Overwritten — manual edits are reverted |
+| Clients (relying parties) | **Maintainers**, by hand or through a separate GUI | Left alone |
+| Groups (one per kår) and user memberships | **The Scoutnet provider**, at login | Left alone |
+
+The chart therefore pins `IMPORT_MANAGED_CLIENT` and `IMPORT_MANAGED_GROUP` to
+`no-delete`, and **rejects `full` for either at render time**. Both are set
+explicitly rather than left to the partial-document layout that happens to spare
+them today: relying on that would make a config-cli upgrade, or a merge of the four
+files into one full-realm document, silently start deleting.
+
+> **Declaring the parent group does not make `full` safe** — it makes things worse.
+> `no-delete` only protects *undeclared top-level* groups. Declaring `scoutnet`
+> promotes it to a managed parent, and `full` then prunes every child not listed in
+> Git. Verified on a live deployment: declaring `groups: [{name: scoutnet}]` and
+> running with `IMPORT_MANAGED_GROUP=full` deleted all four kår subgroups and the
+> memberships attached to them. The Job logged **nothing** about the deletion and
+> exited successfully. Making `full` safe would mean declaring every kår in Git and
+> keeping it in sync with Scoutnet, which defeats the provider.
 
 > **Group renames are destructive.** Renaming children of a managed parent group has
 > deleted hundreds of subgroups and tens of thousands of user-to-group memberships.

@@ -132,7 +132,11 @@ configCli:
   varSubstitution: true          # off in the tool itself; without it $(env:X) is stored literally
   configDir: ""                  # path globbed into a ConfigMap
   existingConfigMap: ""
-  managedGroup: no-delete
+  # Ownership boundaries; see the "Who owns what" table in docs/configuration.md.
+  # Everything not listed here stays full-state: Git wins and manual edits are
+  # overwritten. These two are the exceptions, and both must stay no-delete.
+  managedClient: no-delete       # relying parties are registered by operators
+  managedGroup: no-delete        # kår groups are synced by the Scoutnet provider
   availabilityCheckTimeout: 300s
   extraEnv: []
   extraEnvFrom: []               # client-secret Secrets referenced as $(env:...)
