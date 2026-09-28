@@ -6,7 +6,7 @@
 # otherwise preferred_username, given_name, family_name and the rest silently vanish
 # from every token while the import still reports success.
 
-realm: scoutnet
+realm: scoutid
 
 clientScopes:
   # Extend the standard profile scope with scoutnet_member_no.

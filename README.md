@@ -43,7 +43,7 @@ the `scoutid` login theme, the ScoutID user-profile schema, and the claims contr
 (`scoutnet_member_no`, `memberships`, `primary_group_no`, `scoutnet-memberships`
 scope, …).
 
-It configures the **`scoutnet`** realm and leaves `master` stock for Keycloak
+It configures the **`scoutid`** realm and leaves `master` stock for Keycloak
 administrators. Set `scoutid.enabled: false` for a plain Keycloak.
 
 Relying-party clients are not included — they carry per-environment secrets and are

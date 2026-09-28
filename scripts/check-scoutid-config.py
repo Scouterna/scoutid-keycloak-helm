@@ -88,10 +88,10 @@ def main():
                     claims.add(claim)
         print(f"ok: {name} parsed")
 
-    if realms != {"scoutnet"}:
-        error(f"expected realm scoutnet in every file, got {sorted(realms)}")
+    if realms != {"scoutid"}:
+        error(f"expected realm scoutid in every file, got {sorted(realms)}")
         failed = True
-    elif not check_schema_enum("scoutnet"):
+    elif not check_schema_enum("scoutid"):
         failed = True
 
     missing = REQUIRED_CLAIMS - claims

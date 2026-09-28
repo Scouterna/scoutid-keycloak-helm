@@ -1,7 +1,7 @@
 # Built-in clients only. Relying parties are registered per environment with their
 # own secrets and redirect URIs — they are deliberately not part of this chart.
 
-realm: scoutnet
+realm: scoutid
 
 clients:
   # The account console needs the ScoutID scopes to render the custom attributes.

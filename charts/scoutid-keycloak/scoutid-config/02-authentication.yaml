@@ -5,7 +5,7 @@
 # Both IDs are registered by the provider JAR — see ScoutnetCookieAuthenticatorFactory
 # and ScoutnetAuthenticatorFactory.
 
-realm: scoutnet
+realm: scoutid
 
 authenticationFlows:
   - alias: "ScoutID browser login"

@@ -188,9 +188,8 @@ keycloak-config-cli Job. It is **chart-owned in this release** — there are no 
 for changing its content. Treat a chart upgrade as the way realm configuration
 changes.
 
-It configures the **`scoutnet`** realm and leaves `master` stock, so Keycloak
-administrators stay separate from ScoutID members. This matches the existing
-`dev.id.scouterna.se` deployment.
+It configures the **`scoutid`** realm and leaves `master` stock, so Keycloak
+administrators stay separate from ScoutID members.
 
 The realm name is fixed by the bundled files, not by a value. `scoutid.realm` exists
 only so tooling can read it: left empty the chart derives it from the config itself,

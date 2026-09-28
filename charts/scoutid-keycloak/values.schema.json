@@ -187,8 +187,8 @@
         "enabled": { "type": "boolean" },
         "realm": {
           "type": "string",
-          "enum": ["", "scoutnet"],
-          "description": "The realm is fixed by the bundled config and is not configurable in this release. Leave empty to read it from there; \"scoutnet\" is accepted as an explicit restatement. To use a different realm, disable scoutid.enabled and supply your own config via configCli."
+          "enum": ["", "scoutid"],
+          "description": "The realm is fixed by the bundled config and is not configurable in this release. Leave empty to read it from there; \"scoutid\" is accepted as an explicit restatement. To use a different realm, disable scoutid.enabled and supply your own config via configCli."
         }
       }
     },

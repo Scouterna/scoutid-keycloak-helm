@@ -3,7 +3,7 @@
 # Scoutnet is the credential authority: no self-registration, no password reset,
 # no email login. Keycloak never holds a password for these users.
 
-realm: scoutnet
+realm: scoutid
 enabled: true
 
 accessTokenLifespan: 300          # 5 minutes
