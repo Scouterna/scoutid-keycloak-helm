@@ -2,37 +2,38 @@
 
 ## On the Scouterna azure-webservices cluster
 
-Three things must exist before the chart is installed. The first two are
-infra-owned; the third is self-service.
+Three things must exist before the chart is installed. The first two come from
+the platform's project onboarding; the third is self-service. The platform's own
+`docs/onboarding.md` and `docs/postgres.md` are the authority for steps 1 and 2;
+this is the ScoutID-specific summary.
 
 ### 1. Namespace
 
-Namespaces are Layer-1 resources in `azure-webservices`, created from
-`k8s/projects/scoutid/infra/namespace-*.yaml` and applied by the `project-infra`
-ApplicationSet. Convention is `<project>-dev` / `<project>-prod` with the labels
-`scouterna.se/project` and `scouterna.se/env`.
+Namespaces are infra-owned, created from
+`k8s/projects/proj-scoutid/infra/namespace-<env>.yaml` and applied by the
+`project-infra` ApplicationSet: `proj-scoutid-dev`, `proj-scoutid-staging`,
+`proj-scoutid-prod`.
 
-### 2. Database (CloudNativePG)
+### 2. Database (the shared server)
 
-Also Layer-1. Copy `k8s/projects/_template/infra/database.yaml.example` to
-`k8s/projects/scoutid/infra/database.yaml` and run
-`scripts/onboard-cnpg-backup.sh scoutid` first — that creates the backup blob
-container. Note the filename matters: the ApplicationSet only syncs
-`{namespace.yaml,namespace-*.yaml,developer-rbac.yaml,database.yaml}`, so an
-`.example` suffix stays inert.
+Projects get a database and a role per environment on the shared PostgreSQL
+server, not a cluster of their own. The platform's
+`scripts/new-project-db.sh proj-scoutid dev staging prod` generates them. It also
+writes `k8s/projects/proj-scoutid/infra/database.yaml`, which puts a Secret named
+`proj-scoutid-db` into each namespace with `host`, `port`, `dbname`, `username`
+and `password`.
 
-CloudNativePG generates a Secret named `<clusterName>-app` with keys `username`
-and `password`. That is what the chart reads:
+The chart's defaults read exactly that Secret, connection details included:
 
 ```yaml
 database:
-  mode: cnpg
-  cnpg:
-    clusterName: scoutid-keycloak-db
+  credentials:
+    existingSecret: proj-scoutid-db
 ```
 
-Size the PVC in `database.yaml` to an exact Azure disk tier — 4, 8, 16, 32, 64,
-128 Gi — because Azure rounds up and bills the whole tier.
+Backups of the shared server are the platform's concern. A dedicated
+CloudNativePG cluster is still possible for a project that needs one; see
+[the `cnpg` mode](configuration.md#a-dedicated-cloudnativepg-cluster-cnpg-mode).
 
 ### 3. Admin secret
 
@@ -42,7 +43,7 @@ path on this cluster:
 ```bash
 kubeseal --controller-namespace sealed-secrets --fetch-cert > pub-cert.pem
 
-kubectl create secret generic keycloak-admin -n scoutid-dev \
+kubectl create secret generic keycloak-admin -n proj-scoutid-dev \
   --from-literal=KC_BOOTSTRAP_ADMIN_USERNAME=admin \
   --from-literal=KC_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -base64 24)" \
   --dry-run=client -o yaml \
@@ -55,13 +56,13 @@ and name, so it cannot be moved between namespaces.
 If a value must outlive the cluster or be centrally rotated, use External Secrets
 against the `azure-kv` ClusterSecretStore instead. One constraint: `ExternalSecret`
 is **not** whitelisted in the `apps-dev` / `apps-prod` AppProjects, so it must live
-in `k8s/projects/scoutid/infra/`, not in the app chart.
+in `k8s/projects/proj-scoutid/infra/`, not in the app chart.
 
 ### 4. Install
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.4.0 -n scoutid-dev \
+  --version 0.5.0 -n proj-scoutid-dev \
   -f examples/values-azure-webservices-dev.yaml
 ```
 
@@ -83,7 +84,9 @@ Validate against `letsencrypt-staging` before switching to `letsencrypt-prod`.
 ## On any other cluster
 
 The chart needs only a PostgreSQL database, a Secret with its credentials, and an
-ingress controller:
+ingress controller. If the Secret also holds the connection details (keys `host`,
+`port`, `dbname` by default), the defaults read them and `host`/`name` can go;
+otherwise state them and turn `fromSecret` off:
 
 ```yaml
 hostname:
@@ -91,6 +94,7 @@ hostname:
 database:
   mode: external
   external:
+    fromSecret: false
     host: postgres.example.org
     name: keycloak
     sslMode: require
@@ -114,8 +118,8 @@ If the ingress controller is not Traefik, use `ingress.type: ingress` (the
 default). `ingressroute` requires Traefik's CRDs.
 
 For a database that needs a non-standard connection string — Azure managed-identity
-auth, for instance — set `database.external.jdbcUrl` directly; it overrides the
-host/port/name assembly.
+auth, for instance — set `database.external.jdbcUrl` directly, with
+`fromSecret: false`; it overrides the host/port/name assembly.
 
 ## Verifying the install
 
@@ -176,3 +180,19 @@ With a single replica the strategy is `Recreate`, so there is a short outage whi
 the new pod starts — deliberate, because two Keycloak versions must not run against
 one database schema at the same time. Keycloak upgrades may migrate the schema, so
 confirm the database backup is current first.
+
+### To 0.5.0: database defaults changed
+
+The default is now `mode: external` with `fromSecret: true`. With `-f values.yaml`
+(and with ArgoCD) both breaking cases are rejected at render time, so nothing
+starts against the wrong database:
+
+- **Relying on `mode: cnpg` without stating it:** add `database.mode: cnpg`.
+- **`external` with a literal `host`, `port`, `name` or `jdbcUrl`:** either add
+  `database.external.fromSecret: false`, or delete those values if the credentials
+  Secret already holds them (the platform's `<project>-db` does).
+
+`helm upgrade --reuse-values` is different: Helm then keeps the *previous*
+chart's defaults, so the release carries on exactly as before (the old mode and
+a literal host). Nothing breaks, but nothing moves to the secret either; switch
+to `-f` with updated values to adopt the new defaults.

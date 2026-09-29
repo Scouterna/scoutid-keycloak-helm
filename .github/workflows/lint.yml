@@ -45,26 +45,26 @@ jobs:
               echo "ok: $desc"
             fi
           }
-          check "missing hostname.public" --set database.cnpg.clusterName=db
-          check "scheme in hostname.public" --set hostname.public=https://id.example.se --set database.cnpg.clusterName=db
-          check "replicas>1 without cache" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set replicaCount=3
+          check "missing hostname.public" --set database.credentials.existingSecret=db
+          check "scheme in hostname.public" --set hostname.public=https://id.example.se --set database.credentials.existingSecret=db
+          check "replicas>1 without cache" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set replicaCount=3
           check "invalid database.mode" --set hostname.public=id.example.se --set database.mode=bogus
-          check "invalid ingress.type" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.type=bogus
-          check "cnpg without clusterName" --set hostname.public=id.example.se
-          check "cnpg with only a secret name (host would be '-rw')" --set hostname.public=id.example.se --set database.cnpg.secretName=my-db
-          check "cnpg with only credentials.existingSecret" --set hostname.public=id.example.se --set database.credentials.existingSecret=my-creds
-          check "cnpg with a host but no credential source" --set hostname.public=id.example.se --set database.cnpg.host=pg.example.se
-          check "external without credentials" --set hostname.public=id.example.se --set database.mode=external --set database.external.host=db.example.se
-          check "admin ingress without admin host" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.admin.enabled=true
-          check "rootRedirect on plain Ingress" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set ingress.public.rootRedirect.enabled=true
-          check "ipAllowList on a non-Traefik controller" --set hostname.public=id.example.se --set hostname.admin=admin.id.example.se --set database.cnpg.clusterName=db --set ingress.className=nginx --set ingress.admin.enabled=true --set 'ingress.admin.ipAllowList={10.0.0.0/8}'
-          check "waitForDb with no resolvable host" --set hostname.public=id.example.se --set database.mode=external --set 'database.external.jdbcUrl=jdbc:postgresql://h:5432/d' --set database.credentials.existingSecret=s --set initContainers.waitForDb.enabled=true
-          check "empty image.tag" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set image.tag=
-          check "non-integer ttlSecondsAfterFinished" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set configCli.ttlSecondsAfterFinished=600s
-          check "scoutid config without a bootstrap admin secret" --set hostname.public=id.example.se --set database.cnpg.clusterName=db
-          check "scoutid config plus existingConfigMap" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set configCli.existingConfigMap=mine
-          check "scoutid.realm disagreeing with the bundled config" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set scoutid.realm=wrong-realm
-          check "configDir together with existingConfigMap" --set hostname.public=id.example.se --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a --set scoutid.enabled=false --set configCli.enabled=true --set configCli.configDir=scoutid-config --set configCli.existingConfigMap=mine
+          check "invalid ingress.type" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set ingress.type=bogus
+          check "cnpg without clusterName" --set hostname.public=id.example.se --set database.mode=cnpg
+          check "cnpg with only a secret name (host would be '-rw')" --set hostname.public=id.example.se --set database.mode=cnpg --set database.cnpg.secretName=my-db
+          check "cnpg with only credentials.existingSecret" --set hostname.public=id.example.se --set database.mode=cnpg --set database.credentials.existingSecret=my-creds
+          check "cnpg with a host but no credential source" --set hostname.public=id.example.se --set database.mode=cnpg --set database.cnpg.host=pg.example.se
+          check "external without credentials" --set hostname.public=id.example.se --set database.external.fromSecret=false --set database.external.host=db.example.se
+          check "admin ingress without admin host" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set ingress.admin.enabled=true
+          check "rootRedirect on plain Ingress" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set ingress.public.rootRedirect.enabled=true
+          check "ipAllowList on a non-Traefik controller" --set hostname.public=id.example.se --set hostname.admin=admin.id.example.se --set database.credentials.existingSecret=db --set ingress.className=nginx --set ingress.admin.enabled=true --set 'ingress.admin.ipAllowList={10.0.0.0/8}'
+          check "waitForDb with no resolvable host" --set hostname.public=id.example.se --set database.external.fromSecret=false --set 'database.external.jdbcUrl=jdbc:postgresql://h:5432/d' --set database.credentials.existingSecret=s --set initContainers.waitForDb.enabled=true
+          check "empty image.tag" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a --set image.tag=
+          check "non-integer ttlSecondsAfterFinished" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set configCli.ttlSecondsAfterFinished=600s
+          check "scoutid config without a bootstrap admin secret" --set hostname.public=id.example.se --set database.credentials.existingSecret=db
+          check "scoutid config plus existingConfigMap" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a --set configCli.existingConfigMap=mine
+          check "scoutid.realm disagreeing with the bundled config" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a --set scoutid.realm=wrong-realm
+          check "configDir together with existingConfigMap" --set hostname.public=id.example.se --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a --set scoutid.enabled=false --set configCli.enabled=true --set configCli.configDir=scoutid-config --set configCli.existingConfigMap=mine
           exit $fail
 
       - name: Reported realm must equal the realm actually imported
@@ -74,12 +74,15 @@ jobs:
         run: |
           helm template kc "$CHART" \
             --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db \
+            --set database.credentials.existingSecret=db \
             --set admin.bootstrap.existingSecret=kc-admin \
             | python3 scripts/check-scoutid-config.py
 
       - name: Config-source combinations must behave as specified
         run: python3 scripts/check-config-matrix.py
+
+      - name: Database modes must reach Keycloak as specified
+        run: python3 scripts/check-db-modes.py
 
       - name: extraConfig must render as specified and reject silent failures
         run: python3 scripts/check-extra-config.py
@@ -99,7 +102,7 @@ jobs:
           for extra in "--set cache.enabled=true --set replicaCount=2" ""; do
             if ! helm template kc "$CHART" \
               --set hostname.public=id.example.se \
-              --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+              --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a \
               $extra | python3 scripts/check-service-ports.py; then
               echo "::error::dangling targetPort with: ${extra:-defaults}"
               fail=1
@@ -118,7 +121,7 @@ jobs:
               --set 'hostname.admin=*.admin.example.com' \
               --set ingress.admin.enabled=true \
               --set "ingress.type=$t" \
-              --set database.cnpg.clusterName=db \
+              --set database.credentials.existingSecret=db \
               --set admin.bootstrap.existingSecret=a >/dev/null 2>&1; then
               echo "::error::ingress.type=$t fails to render with a wildcard host"
               fail=1
@@ -130,7 +133,7 @@ jobs:
           # emit the key twice (duplicate keys are rejected by strict parsers).
           dupes=$(helm template kc "$CHART" \
             --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db \
+            --set database.credentials.existingSecret=db \
             --set admin.bootstrap.existingSecret=a \
             --set 'ingress.annotations.cert-manager\.io/cluster-issuer=mine' \
             | grep -c 'cert-manager.io/cluster-issuer:')
@@ -150,7 +153,7 @@ jobs:
           count() {
             helm template kc "$CHART" \
               --set hostname.public=id.example.se --set hostname.admin=admin.id.example.se \
-              --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+              --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a \
               --set ingress.admin.enabled=true --set 'ingress.admin.ipAllowList={10.0.0.0/8}' \
               "$@" 2>/dev/null | grep -c 'traefik.io' || true
           }
@@ -170,7 +173,7 @@ jobs:
         run: |
           helm template kc "$CHART" \
             --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a \
             --set ingress.type=ingressroute \
             --set ingress.public.rootRedirect.enabled=true \
             --set 'ingress.public.paths={/}' \
@@ -182,7 +185,7 @@ jobs:
           # over HTTP. A mounted token is credential exposure for no benefit.
           helm template kc "$CHART" \
             --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a \
             --set admin.ensurePermanentAdmin.enabled=true \
             --set admin.ensurePermanentAdmin.existingSecret=perm \
             | python3 scripts/check-job-hardening.py
@@ -193,7 +196,7 @@ jobs:
           # "annotations:" key parses as null rather than a map.
           helm template kc "$CHART" \
             --set hostname.public=id.example.se \
-            --set database.cnpg.clusterName=db --set admin.bootstrap.existingSecret=a \
+            --set database.credentials.existingSecret=db --set admin.bootstrap.existingSecret=a \
             --set scoutid.enabled=false --set configCli.enabled=true \
             --set configCli.existingConfigMap=mine \
             | python3 scripts/check-job-annotations.py

@@ -54,8 +54,8 @@ spec:
             - sh
             - -c
             - |
-              host={{ include "scoutid-keycloak.dbHost" . | quote }}
-              port={{ include "scoutid-keycloak.dbPort" . | quote }}
+              host="$DB_HOST"
+              port="$DB_PORT"
               timeout={{ .Values.initContainers.waitForDb.timeoutSeconds }}
               interval={{ .Values.initContainers.waitForDb.intervalSeconds }}
               elapsed=0
@@ -70,6 +70,24 @@ spec:
               done
               echo "$host:$port is reachable"
           {{- end }}
+          env:
+            {{- if include "scoutid-keycloak.dbFromSecret" . }}
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.hostKey }}
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.portKey }}
+            {{- else }}
+            - name: DB_HOST
+              value: {{ include "scoutid-keycloak.dbHost" . | quote }}
+            - name: DB_PORT
+              value: {{ include "scoutid-keycloak.dbPort" . | quote }}
+            {{- end }}
           securityContext:
             {{- with .Values.securityContext }}
             {{- toYaml . | nindent 12 }}
@@ -93,8 +111,29 @@ spec:
           env:
             - name: KC_DB
               value: postgres
+            {{- if include "scoutid-keycloak.dbFromSecret" . }}
+            - name: KC_DB_URL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.hostKey }}
+            - name: KC_DB_URL_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.portKey }}
+            - name: KC_DB_URL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "scoutid-keycloak.dbSecretName" . }}
+                  key: {{ .Values.database.credentials.databaseKey }}
+            # Appended verbatim to Keycloak's default URL, hence the leading "?".
+            - name: KC_DB_URL_PROPERTIES
+              value: {{ printf "?%s" (include "scoutid-keycloak.dbQuery" .) | quote }}
+            {{- else }}
             - name: KC_DB_URL
               value: {{ include "scoutid-keycloak.jdbcUrl" . | quote }}
+            {{- end }}
             - name: KC_DB_USERNAME
               valueFrom:
                 secretKeyRef:

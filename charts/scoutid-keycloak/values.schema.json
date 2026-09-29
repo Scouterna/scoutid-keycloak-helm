@@ -49,9 +49,10 @@
         "external": {
           "type": "object",
           "properties": {
+            "fromSecret": { "type": "boolean" },
             "jdbcUrl": { "type": "string", "pattern": "^(jdbc:postgresql://.*)?$" },
             "host": { "type": "string" },
-            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
             "name": { "type": "string" },
             "sslMode": { "type": "string", "enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"] },
             "params": { "type": "string" }
@@ -62,7 +63,10 @@
           "properties": {
             "existingSecret": { "type": "string" },
             "usernameKey": { "type": "string", "minLength": 1 },
-            "passwordKey": { "type": "string", "minLength": 1 }
+            "passwordKey": { "type": "string", "minLength": 1 },
+            "hostKey": { "type": "string", "minLength": 1 },
+            "portKey": { "type": "string", "minLength": 1 },
+            "databaseKey": { "type": "string", "minLength": 1 }
           }
         }
       }

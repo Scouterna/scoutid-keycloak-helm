@@ -4,15 +4,15 @@ Helm chart for [ScoutID Keycloak](https://github.com/Scouterna/scoutid-keycloak)
 with the Scoutnet authenticator and the ScoutID login theme baked in.
 
 The chart's defaults target the Scouterna `azure-webservices` cluster (Traefik,
-cert-manager, CloudNativePG, kube-prometheus-stack), but every platform-specific
+cert-manager, a shared CloudNativePG server, kube-prometheus-stack), but every platform-specific
 choice is a value: it deploys against any Kubernetes and any PostgreSQL.
 
 ## Install
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.4.0 \
-  --namespace scoutid-dev \
+  --version 0.5.0 \
+  --namespace proj-scoutid-dev \
   -f my-values.yaml
 ```
 
@@ -22,16 +22,16 @@ Smallest working configuration:
 hostname:
   public: id.example.org
 database:
-  mode: external
-  external:
-    host: postgres.example.org
-    name: keycloak
   credentials:
-    existingSecret: keycloak-db     # keys: username, password
+    existingSecret: keycloak-db     # keys: host, port, dbname, username, password
 admin:
   bootstrap:
     existingSecret: keycloak-admin
 ```
+
+That Secret shape is what the `azure-webservices` platform creates for every
+project (`<project>-db`). If yours holds only a username and password, set
+`database.external.fromSecret: false` and give `database.external.host` instead.
 
 Worked examples for several platforms are in [`examples/`](examples/).
 
@@ -68,9 +68,10 @@ registered separately. See [docs/configuration.md](docs/configuration.md).
 - **It never templates secret material.** Every credential is referenced from an
   existing Secret, so it works with Sealed Secrets, External Secrets, the Key Vault
   CSI driver, a CloudNativePG-generated secret, or a hand-made one.
-- **It does not create a database.** On `azure-webservices` the CloudNativePG
-  `Cluster` is an infra-owned resource; the chart only consumes its generated
-  `<cluster>-app` secret.
+- **It does not create a database.** On `azure-webservices` each project gets a
+  database on the shared server from the platform, and the chart reads the
+  connection Secret the platform puts in the namespace. A dedicated CloudNativePG
+  cluster (`database.mode: cnpg`) is supported too, and is not created either.
 
 Both are deliberate — see [docs/configuration.md](docs/configuration.md).
 

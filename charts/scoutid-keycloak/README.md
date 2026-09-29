@@ -5,7 +5,7 @@ Keycloak with the Scoutnet authenticator and ScoutID theme
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.4.0 -n <namespace> -f values.yaml
+  --version 0.5.0 -n <namespace> -f values.yaml
 ```
 
 Ships the ScoutID realm configuration (realm `scoutid`; `master` left stock): the
@@ -20,12 +20,8 @@ Minimum values:
 hostname:
   public: id.example.org
 database:
-  mode: external
-  external:
-    host: postgres.example.org
-    name: keycloak
   credentials:
-    existingSecret: keycloak-db     # keys: username, password
+    existingSecret: keycloak-db     # keys: host, port, dbname, username, password
 admin:
   bootstrap:
     existingSecret: keycloak-admin
@@ -33,8 +29,10 @@ admin:
 
 The chart references existing Secrets and never templates secret material, and it
 consumes a database rather than creating one. Defaults suit the Scouterna
-`azure-webservices` cluster (Traefik, cert-manager, CloudNativePG,
-kube-prometheus-stack); every platform choice is a value.
+`azure-webservices` cluster (Traefik, cert-manager, the shared CloudNativePG
+server, kube-prometheus-stack); every platform choice is a value. For a Secret
+without connection details, set `database.external.fromSecret: false` and
+`database.external.host`.
 
 Full documentation:
 <https://github.com/Scouterna/scoutid-keycloak-helm/tree/main/docs>

@@ -1,6 +1,6 @@
 # PROD on the Scouterna azure-webservices cluster. Stated completely: a value
 # added to the dev file does NOT reach prod unless it is also added here.
-# Namespace: scoutid-prod.
+# Namespace: proj-scoutid-prod.
 image:
   tag: sha-e2b6218                       # pin a digest-backed tag for prod
 
@@ -11,9 +11,8 @@ hostname:
   admin: admin.id.scouterna.se
 
 database:
-  mode: cnpg
-  cnpg:
-    clusterName: scoutid-keycloak-db
+  credentials:
+    existingSecret: proj-scoutid-db      # made by the platform's new-project-db.sh
 
 admin:
   bootstrap:

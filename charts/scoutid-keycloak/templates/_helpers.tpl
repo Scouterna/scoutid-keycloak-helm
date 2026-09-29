@@ -87,11 +87,22 @@ file fails at `helm template` rather than at runtime.
 {{- end -}}
 {{- end -}}
 {{- if eq .Values.database.mode "external" -}}
-{{- if not (or .Values.database.external.jdbcUrl .Values.database.external.host) -}}
-{{- fail "database.mode=external requires database.external.host or database.external.jdbcUrl" -}}
-{{- end -}}
 {{- if not .Values.database.credentials.existingSecret -}}
-{{- fail "database.mode=external requires database.credentials.existingSecret" -}}
+{{- fail "database.mode=external requires database.credentials.existingSecret (on azure-webservices: the platform's <project>-db secret)" -}}
+{{- end -}}
+{{- $ext := .Values.database.external -}}
+{{- if $ext.fromSecret -}}
+{{- $set := list -}}
+{{- range $k := list "jdbcUrl" "host" "port" "name" -}}
+{{- if index $ext $k -}}
+{{- $set = append $set (printf "database.external.%s" $k) -}}
+{{- end -}}
+{{- end -}}
+{{- if $set -}}
+{{- fail (printf "%s would be ignored: database.external.fromSecret=true reads host, port and database name from the secret %q. Remove them, or set fromSecret: false to use literal values." (join ", " $set) .Values.database.credentials.existingSecret) -}}
+{{- end -}}
+{{- else if not (or $ext.jdbcUrl $ext.host) -}}
+{{- fail "database.mode=external with fromSecret: false requires database.external.host or database.external.jdbcUrl" -}}
 {{- end -}}
 {{- end -}}
 {{- if and .Values.ingress.admin.enabled (not .Values.hostname.admin) -}}
@@ -103,7 +114,7 @@ file fails at `helm template` rather than at runtime.
 {{- if and .Values.ingress.admin.ipAllowList (eq .Values.ingress.type "ingress") (ne .Values.ingress.className "traefik") -}}
 {{- fail (printf "ingress.admin.ipAllowList is enforced by a Traefik Middleware and would be silently ignored by ingress controller %q, leaving the admin host ungated. Either use Traefik, or clear ipAllowList and set an equivalent annotation for your controller in ingress.annotations (nginx: nginx.ingress.kubernetes.io/whitelist-source-range)." .Values.ingress.className) -}}
 {{- end -}}
-{{- if and .Values.initContainers.waitForDb.enabled (not (include "scoutid-keycloak.dbHost" .)) -}}
+{{- if and .Values.initContainers.waitForDb.enabled (not (include "scoutid-keycloak.dbFromSecret" .)) (not (include "scoutid-keycloak.dbHost" .)) -}}
 {{- fail "initContainers.waitForDb.enabled=true needs a resolvable host, but none could be derived (database.external.jdbcUrl does not expose one). Set database.external.host as well, or disable the init container." -}}
 {{- end -}}
 {{- if and .Values.configCli.enabled (not (or .Values.configCli.configDir .Values.configCli.existingConfigMap .Values.configCli.extraConfig)) -}}
@@ -342,8 +353,30 @@ DB host. cnpg exposes the primary as the "<cluster>-rw" Service.
 {{- end -}}
 
 {{/*
+"true" when host, port and database name come from the credentials secret
+(external mode with fromSecret), otherwise empty.
+*/}}
+{{- define "scoutid-keycloak.dbFromSecret" -}}
+{{- if and (eq .Values.database.mode "external") .Values.database.external.fromSecret -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+JDBC query string without the leading "?": sslmode plus any extra params. Shared
+by the full URL and by KC_DB_URL_PROPERTIES so the two forms cannot drift.
+*/}}
+{{- define "scoutid-keycloak.dbQuery" -}}
+{{- $sslMode := ternary (default "disable" .Values.database.cnpg.sslMode) (default "require" .Values.database.external.sslMode) (eq .Values.database.mode "cnpg") -}}
+{{- $params := ternary "" (default "" .Values.database.external.params) (eq .Values.database.mode "cnpg") -}}
+{{- $query := printf "sslmode=%s" $sslMode -}}
+{{- if $params -}}
+{{- $query = printf "%s&%s" $query ($params | trimPrefix "&" | trimPrefix "?") -}}
+{{- end -}}
+{{- $query -}}
+{{- end -}}
+
+{{/*
 Full JDBC URL. An explicit database.external.jdbcUrl always wins.
-sslMode/params are appended as query parameters.
+Not used with fromSecret, where Keycloak assembles the URL from its parts.
 */}}
 {{- define "scoutid-keycloak.jdbcUrl" -}}
 {{- if and (eq .Values.database.mode "external") .Values.database.external.jdbcUrl -}}
@@ -352,13 +385,7 @@ sslMode/params are appended as query parameters.
 {{- $host := include "scoutid-keycloak.dbHost" . -}}
 {{- $port := include "scoutid-keycloak.dbPort" . -}}
 {{- $name := include "scoutid-keycloak.dbName" . -}}
-{{- $sslMode := ternary (default "disable" .Values.database.cnpg.sslMode) (default "require" .Values.database.external.sslMode) (eq .Values.database.mode "cnpg") -}}
-{{- $params := ternary "" (default "" .Values.database.external.params) (eq .Values.database.mode "cnpg") -}}
-{{- $query := printf "sslmode=%s" $sslMode -}}
-{{- if $params -}}
-{{- $query = printf "%s&%s" $query ($params | trimPrefix "&" | trimPrefix "?") -}}
-{{- end -}}
-{{- printf "jdbc:postgresql://%s:%s/%s?%s" $host $port $name $query -}}
+{{- printf "jdbc:postgresql://%s:%s/%s?%s" $host $port $name (include "scoutid-keycloak.dbQuery" .) -}}
 {{- end -}}
 {{- end -}}
 

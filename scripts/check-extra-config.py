@@ -20,7 +20,7 @@ import yaml
 CHART = "charts/scoutid-keycloak"
 BASE = {
     "hostname": {"public": "id.example.se"},
-    "database": {"cnpg": {"clusterName": "db"}},
+    "database": {"credentials": {"existingSecret": "db"}},
     "admin": {"bootstrap": {"existingSecret": "kc-admin"}},
 }
 SESSION = {"realm": "scoutid", "ssoSessionIdleTimeout": 86400, "ssoSessionMaxLifespan": 2592000}

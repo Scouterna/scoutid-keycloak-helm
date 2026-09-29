@@ -20,26 +20,30 @@ hostname:
   admin: ""                      # optional split admin host
   strict: true
 
-# mode: cnpg | external
+# mode: external | cnpg. See docs/configuration.md#database.
 database:
-  mode: cnpg
+  mode: external
+  external:
+    fromSecret: true             # host/port/dbname from credentials.existingSecret
+    jdbcUrl: ""                  # fromSecret: false only; wins over host/port/name
+    host: ""                     # fromSecret: false only
+    port: null                   # fromSecret: false only; default 5432
+    name: ""                     # fromSecret: false only; default keycloak
+    sslMode: require
+    params: ""                   # extra JDBC query params
   cnpg:
     clusterName: ""              # reads "<clusterName>-app" and "<clusterName>-rw"
     secretName: ""               # override the generated app secret
     host: ""                     # override the -rw service
     database: app                # CloudNativePG's default bootstrap database
     sslMode: disable             # in-cluster hop; CNPG requires client certs for verify-*
-  external:
-    jdbcUrl: ""                  # wins over host/port/name if set
-    host: ""
-    port: 5432
-    name: keycloak
-    sslMode: require
-    params: ""                   # extra JDBC query params
   credentials:
-    existingSecret: ""           # defaults to the cnpg app secret
+    existingSecret: ""           # required for external; defaults to the cnpg app secret
     usernameKey: username
     passwordKey: password
+    hostKey: host                # fromSecret only
+    portKey: port                # fromSecret only
+    databaseKey: dbname          # fromSecret only
 
 admin:
   bootstrap:

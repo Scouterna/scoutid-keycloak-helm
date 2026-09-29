@@ -6,6 +6,7 @@ hostname:
 database:
   mode: external
   external:
+    fromSecret: false
     host: postgres.example.org
     name: keycloak
     sslMode: require

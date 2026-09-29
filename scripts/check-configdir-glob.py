@@ -24,7 +24,7 @@ import yaml
 CHART = "charts/scoutid-keycloak"
 BASE = [
     "--set", "hostname.public=id.example.se",
-    "--set", "database.cnpg.clusterName=db",
+    "--set", "database.credentials.existingSecret=db",
     "--set", "admin.bootstrap.existingSecret=kc-admin",
 ]
 

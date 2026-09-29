@@ -1,5 +1,5 @@
 # DEV on the Scouterna azure-webservices cluster. Stated completely — nothing is
-# inherited from the prod file. Namespace: scoutid-dev.
+# inherited from the prod file. Namespace: proj-scoutid-dev.
 image:
   tag: latest                            # dev tracks the default branch
 
@@ -10,9 +10,8 @@ hostname:
   admin: admin.id.dev.wsinfra.scouterna.net
 
 database:
-  mode: cnpg
-  cnpg:
-    clusterName: scoutid-keycloak-db
+  credentials:
+    existingSecret: proj-scoutid-db      # made by the platform's new-project-db.sh
 
 admin:
   bootstrap:

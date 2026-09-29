@@ -57,28 +57,80 @@ to serve the console there, *and* the ingress does not route to it.
 
 | Value | Default | Notes |
 |---|---|---|
-| `database.mode` | `cnpg` | `cnpg` or `external` |
+| `database.mode` | `external` | `external` or `cnpg` |
+| `database.external.fromSecret` | `true` | Read host, port and database name from `credentials.existingSecret` |
+| `database.external.jdbcUrl` | `""` | `fromSecret: false` only; wins over host/port/name |
+| `database.external.host` | `""` | `fromSecret: false` only |
+| `database.external.port` | unset (`5432`) | `fromSecret: false` only |
+| `database.external.name` | unset (`keycloak`) | `fromSecret: false` only |
+| `database.external.sslMode` | `require` | |
+| `database.external.params` | `""` | Extra JDBC query parameters |
 | `database.cnpg.clusterName` | `""` | Reads `<name>-app` and `<name>-rw` |
 | `database.cnpg.secretName` | `""` | Override the generated secret (credentials only) |
 | `database.cnpg.host` | `""` | Override the `-rw` service (host only) |
 | `database.cnpg.database` | `app` | CloudNativePG's bootstrap database |
 | `database.cnpg.sslMode` | `disable` | In-cluster hop; `verify-*` needs client certs |
-| `database.external.jdbcUrl` | `""` | Wins over host/port/name |
-| `database.external.host` | `""` | |
-| `database.external.port` | `5432` | |
-| `database.external.name` | `keycloak` | |
-| `database.external.sslMode` | `require` | |
-| `database.external.params` | `""` | Extra JDBC query parameters |
-| `database.credentials.existingSecret` | `""` | Defaults to the CNPG app secret |
+| `database.credentials.existingSecret` | `""` | Required in `external` mode; defaults to the CNPG app secret in `cnpg` mode |
 | `database.credentials.usernameKey` | `username` | |
 | `database.credentials.passwordKey` | `password` | |
+| `database.credentials.hostKey` | `host` | `fromSecret` only |
+| `database.credentials.portKey` | `port` | `fromSecret` only |
+| `database.credentials.databaseKey` | `dbname` | `fromSecret` only |
 
-**The chart does not create a database.** On `azure-webservices` the CloudNativePG
-`Cluster` is infra-owned and lives in `k8s/projects/<project>/infra/database.yaml`;
-templating one here would both violate that contract and couple a generic chart to
-CNPG's CRDs.
+**The chart does not create a database.** It connects to one that the platform or
+you provide. Templating one here would couple a generic chart to CNPG's CRDs and,
+on `azure-webservices`, break the rule that databases are infra-owned.
 
-In `cnpg` mode, `clusterName` is normally the only value needed: the host is its `-rw`
+### The default: a shared server, connection details from one secret
+
+On `azure-webservices`, projects share one PostgreSQL server. Dedicated clusters
+turned out too costly, so they are the exception. The platform's
+`scripts/new-project-db.sh` creates a database and a role per environment, and
+puts a Secret named `<project>-db` into each namespace with the keys `host`,
+`port`, `dbname`, `username`, `password` and `uri`.
+
+The defaults read exactly that Secret: `mode: external` with `fromSecret: true`
+takes host, port and database name from it, alongside the credentials. So the whole
+database configuration is one line:
+
+```yaml
+database:
+  credentials:
+    existingSecret: proj-scoutid-db
+```
+
+Nothing in this is environment-specific, and nothing is copied out of the Secret.
+A database moved or renamed by the platform reaches Keycloak on the next pod
+restart, without a values change. The chart passes the parts to Keycloak as
+`KC_DB_URL_HOST`, `KC_DB_URL_PORT` and `KC_DB_URL_DATABASE`, and sslMode and
+`params` as `KC_DB_URL_PROPERTIES`. It never also sets `KC_DB_URL`, which would
+override the parts. With `fromSecret`, a literal `host`, `port`, `name` or
+`jdbcUrl` would be silently ignored, so setting one is rejected at render time.
+If your secret uses other key names, set `credentials.hostKey`, `portKey` and
+`databaseKey`.
+
+The default `sslMode: require` encrypts the in-cluster hop without client
+certificates, and works against the shared server (verified 2026-09-29).
+`disable` works too. `verify-ca`/`verify-full` do not: CloudNativePG requires
+client certificates for those.
+
+For a database whose address is not in a Secret, set `fromSecret: false` and give
+`host` (with optional `port` and `name`) or a full `jdbcUrl`.
+
+### A dedicated CloudNativePG cluster (`cnpg` mode)
+
+For a project that needs its own Postgres instance (heavy load, a different major
+version, an extension the shared server lacks), the platform lets a project create
+a CloudNativePG `Cluster` in its own namespace. The chart does not create it.
+
+```yaml
+database:
+  mode: cnpg
+  cnpg:
+    clusterName: scoutid-keycloak-db
+```
+
+`clusterName` is normally the only value needed: the host is its `-rw`
 service and the credentials are its generated `<cluster>-app` secret. The host and the
 credentials are nevertheless independent settings, and the chart requires each to be
 resolvable on its own — naming only a secret leaves the host undefined, which would
@@ -86,7 +138,8 @@ otherwise render `jdbc:postgresql://-rw:5432/…` and never connect. Overriding 
 is fine (`cnpg.host` with `cnpg.secretName`, say); overriding neither, or only the
 credential half, is rejected at render time.
 
-`jdbcUrl` is the escape hatch for connection strings the chart cannot assemble — the
+`jdbcUrl` (with `fromSecret: false`) is the escape hatch for connection strings the
+chart cannot assemble — the
 Azure managed-identity plugin, for example, needs
 `?authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin`.
 

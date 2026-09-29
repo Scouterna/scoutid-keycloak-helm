@@ -6,8 +6,13 @@ Admin:   {{ include "scoutid-keycloak.adminUrl" . }}
 {{- else }}
 Admin:   (no separate admin host; the console is served on the public host)
 {{- end }}
+{{- if include "scoutid-keycloak.dbFromSecret" . }}
+Database: host, port, database and credentials from secret {{ include "scoutid-keycloak.dbSecretName" . }}
+          (keys {{ .Values.database.credentials.hostKey }}, {{ .Values.database.credentials.portKey }}, {{ .Values.database.credentials.databaseKey }}, {{ .Values.database.credentials.usernameKey }}, {{ .Values.database.credentials.passwordKey }}); ?{{ include "scoutid-keycloak.dbQuery" . }}
+{{- else }}
 Database: {{ include "scoutid-keycloak.jdbcUrl" . }}
           credentials from secret {{ include "scoutid-keycloak.dbSecretName" . }}
+{{- end }}
 
 Watch it come up (Liquibase migrations make the first boot slow):
 
