@@ -11,7 +11,7 @@ choice is a value: it deploys against any Kubernetes and any PostgreSQL.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.1.0 \
+  --version 0.4.0 \
   --namespace scoutid-dev \
   -f my-values.yaml
 ```
@@ -45,6 +45,20 @@ scope, …).
 
 It configures the **`scoutid`** realm and leaves `master` stock for Keycloak
 administrators. Set `scoutid.enabled: false` for a plain Keycloak.
+
+To change individual realm settings for one deployment, such as session lifetimes,
+override them in your values file:
+
+```yaml
+configCli:
+  enabled: true
+  extraConfig:
+    10-session.yaml:
+      realm: scoutid
+      ssoSessionIdleTimeout: 86400
+```
+
+See [Overriding the bundled realm settings](docs/configuration.md#overriding-the-bundled-realm-settings).
 
 Relying-party clients are not included — they carry per-environment secrets and are
 registered separately. See [docs/configuration.md](docs/configuration.md).

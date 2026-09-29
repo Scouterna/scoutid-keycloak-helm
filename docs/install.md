@@ -61,7 +61,7 @@ in `k8s/projects/scoutid/infra/`, not in the app chart.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.1.0 -n scoutid-dev \
+  --version 0.4.0 -n scoutid-dev \
   -f examples/values-azure-webservices-dev.yaml
 ```
 

@@ -106,9 +106,10 @@ file fails at `helm template` rather than at runtime.
 {{- if and .Values.initContainers.waitForDb.enabled (not (include "scoutid-keycloak.dbHost" .)) -}}
 {{- fail "initContainers.waitForDb.enabled=true needs a resolvable host, but none could be derived (database.external.jdbcUrl does not expose one). Set database.external.host as well, or disable the init container." -}}
 {{- end -}}
-{{- if and .Values.configCli.enabled (not (or .Values.configCli.configDir .Values.configCli.existingConfigMap)) -}}
-{{- fail "configCli.enabled=true requires configCli.configDir or configCli.existingConfigMap" -}}
+{{- if and .Values.configCli.enabled (not (or .Values.configCli.configDir .Values.configCli.existingConfigMap .Values.configCli.extraConfig)) -}}
+{{- fail "configCli.enabled=true requires configCli.extraConfig, configCli.configDir or configCli.existingConfigMap" -}}
 {{- end -}}
+{{- include "scoutid-keycloak.validateExtraConfig" . -}}
 {{- if and .Values.configCli.configDir .Values.configCli.existingConfigMap -}}
 {{- fail "configCli.configDir and configCli.existingConfigMap are mutually exclusive: existingConfigMap wins and configDir would be silently ignored, so your files would never be applied. Set one." -}}
 {{- end -}}
@@ -191,6 +192,83 @@ guard and the ConfigMap must agree on exactly which files are in play.
 */}}
 {{- define "scoutid-keycloak.configDirGlob" -}}
 {{- printf "%s/*.{yaml,yml,json}" (.Values.configCli.configDir | trimSuffix "/") -}}
+{{- end -}}
+
+{{/*
+The text of one configCli.extraConfig entry: a string is taken verbatim, a map is
+rendered as YAML.
+*/}}
+{{- define "scoutid-keycloak.extraConfigBody" -}}
+{{- if kindIs "string" . -}}
+{{- . -}}
+{{- else -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Guards for configCli.extraConfig. Every failure here would otherwise be silent:
+an entry that is never mounted, one that replaces a bundled file, one that is
+applied before the bundled file it means to override, or one that creates a new
+realm because of a typo in its name.
+*/}}
+{{- define "scoutid-keycloak.validateExtraConfig" -}}
+{{- with .Values.configCli.extraConfig -}}
+{{- if not $.Values.configCli.enabled -}}
+{{- fail "configCli.extraConfig is set but configCli.enabled=false, so it would never be applied. Set configCli.enabled=true." -}}
+{{- end -}}
+{{- if $.Values.configCli.existingConfigMap -}}
+{{- fail "configCli.extraConfig and configCli.existingConfigMap are mutually exclusive: existingConfigMap replaces the chart's ConfigMap, so extraConfig would never be applied. Put the content in your ConfigMap instead." -}}
+{{- end -}}
+{{- $bundled := list -}}
+{{- $realm := "" -}}
+{{- if $.Values.scoutid.enabled -}}
+{{- range $p, $_ := $.Files.Glob "scoutid-config/*.yaml" -}}
+{{- $bundled = append $bundled (base $p) -}}
+{{- end -}}
+{{- $realm = include "scoutid-keycloak.scoutidRealm" $ -}}
+{{- end -}}
+{{- $fromDir := list -}}
+{{- if $.Values.configCli.configDir -}}
+{{- range $p, $_ := $.Files.Glob (include "scoutid-keycloak.configDirGlob" $) -}}
+{{- $fromDir = append $fromDir (base $p) -}}
+{{- end -}}
+{{- end -}}
+{{- $last := $bundled | sortAlpha | last | default "" -}}
+{{- range $name, $body := . -}}
+{{- if not (regexMatch "^[-._a-zA-Z0-9]+\\.(yaml|yml|json)$" $name) -}}
+{{- fail (printf "configCli.extraConfig key %q must be a file name ending in .yaml, .yml or .json, using only letters, digits, '-', '_' and '.'" $name) -}}
+{{- end -}}
+{{- if has $name $bundled -}}
+{{- fail (printf "configCli.extraConfig %q has the same name as a bundled ScoutID config file and would replace it. Rename it so it sorts after %q, e.g. 10-%s" $name $last $name) -}}
+{{- end -}}
+{{- if has $name $fromDir -}}
+{{- fail (printf "configCli.extraConfig %q has the same name as a file in configCli.configDir; one would silently replace the other" $name) -}}
+{{- end -}}
+{{- if and $last (le $name $last) -}}
+{{- fail (printf "configCli.extraConfig %q sorts before the bundled %q. Files are applied in name order, so the bundled file would be applied after yours and undo it. Rename it, e.g. 10-%s" $name $last $name) -}}
+{{- end -}}
+{{- if not $body -}}
+{{- fail (printf "configCli.extraConfig %q is empty" $name) -}}
+{{- end -}}
+{{- $doc := $body -}}
+{{- if kindIs "string" $body -}}
+{{- $doc = ternary ($body | fromJson) ($body | fromYaml) (hasSuffix ".json" $name) -}}
+{{- end -}}
+{{- if not (kindIs "map" $doc) -}}
+{{- fail (printf "configCli.extraConfig %q must be a realm document (a map), not a %s" $name (kindOf $doc)) -}}
+{{- end -}}
+{{- if hasKey $doc "Error" -}}
+{{- fail (printf "configCli.extraConfig %q does not parse: %s" $name (index $doc "Error")) -}}
+{{- end -}}
+{{- if not $doc.realm -}}
+{{- fail (printf "configCli.extraConfig %q does not declare a realm; keycloak-config-cli needs one in every file" $name) -}}
+{{- end -}}
+{{- if and $realm (not (has (toString $doc.realm) (list $realm "master"))) -}}
+{{- fail (printf "configCli.extraConfig %q targets realm %q, but the bundled ScoutID config uses %q. keycloak-config-cli would create a new realm rather than change the existing one. Use realm: %s (or master)" $name (toString $doc.realm) $realm $realm) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

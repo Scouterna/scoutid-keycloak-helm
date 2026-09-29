@@ -1,6 +1,7 @@
 {{- $useBundled := and .Values.scoutid.enabled (not .Values.configCli.existingConfigMap) }}
 {{- $useOwn := and .Values.configCli.enabled .Values.configCli.configDir (not .Values.configCli.existingConfigMap) }}
-{{- if or $useBundled $useOwn }}
+{{- $useExtra := and .Values.configCli.enabled .Values.configCli.extraConfig (not .Values.configCli.existingConfigMap) }}
+{{- if or $useBundled $useOwn $useExtra }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -21,5 +22,11 @@ data:
   {{- fail (printf "configCli.configDir %q matched no .yaml/.yml/.json files; the path is relative to the chart root and files must not be excluded by .helmignore" .Values.configCli.configDir) }}
   {{- end }}
   {{- include "scoutid-keycloak.configMapData" (dict "files" $files "root" $) }}
+  {{- end }}
+  {{- if $useExtra }}
+  {{- range $name, $body := .Values.configCli.extraConfig }}
+  {{ $name }}: |
+    {{- include "scoutid-keycloak.extraConfigBody" $body | nindent 4 }}
+  {{- end }}
   {{- end }}
 {{- end }}

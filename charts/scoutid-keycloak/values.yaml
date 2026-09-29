@@ -130,6 +130,9 @@ configCli:
   enabled: false
   image: docker.io/adorsys/keycloak-config-cli:6.5.1-26
   varSubstitution: true          # off in the tool itself; without it $(env:X) is stored literally
+  # File name -> realm document (string or map). Applied after the bundled
+  # 01-04 files, so it overrides them. See docs/configuration.md.
+  extraConfig: {}
   configDir: ""                  # path globbed into a ConfigMap
   existingConfigMap: ""
   # Ownership boundaries; see the "Who owns what" table in docs/configuration.md.

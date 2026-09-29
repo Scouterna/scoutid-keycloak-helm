@@ -184,9 +184,10 @@ to contain the provider JARs. With it disabled you get a plain Keycloak: no Scou
 login flow, no user-profile schema, no ScoutID claims.
 
 The configuration lives in the chart at `scoutid-config/` and is applied by the
-keycloak-config-cli Job. It is **chart-owned in this release** — there are no values
-for changing its content. Treat a chart upgrade as the way realm configuration
-changes.
+keycloak-config-cli Job. It is **chart-owned**: a chart upgrade is how the bundled
+configuration changes. A deployment that needs different values for some settings
+overrides them in its values file with `configCli.extraConfig` — see
+[Overriding the bundled realm settings](#overriding-the-bundled-realm-settings).
 
 It configures the **`scoutid`** realm and leaves `master` stock, so Keycloak
 administrators stay separate from ScoutID members.
@@ -250,6 +251,7 @@ the phone number without an explicit request.
 | `configCli.enabled` | `false` | |
 | `configCli.image` | `adorsys/keycloak-config-cli:6.5.1-26` | Pin to the Keycloak major |
 | `configCli.varSubstitution` | `true` | Chart default; the tool's own default is off |
+| `configCli.extraConfig` | `{}` | File name → realm document, written in the values file. See [Overriding the bundled realm settings](#overriding-the-bundled-realm-settings) |
 | `configCli.configDir` | `""` | Path inside the chart; `*.yaml`/`*.yml`/`*.json` globbed into a ConfigMap |
 | `configCli.existingConfigMap` | `""` | Use a ConfigMap you manage |
 | `configCli.managedClient` | `no-delete` | Operator-owned; `full` is rejected |
@@ -281,6 +283,54 @@ defaults and the hardened settings survive.
 > exchange fails with `unauthorized_client`, so the application's secret looks
 > correct — because it is. Keycloak is holding the placeholder. The chart defaults
 > this to `true`.
+
+### Overriding the bundled realm settings
+
+To change a bundled setting for one deployment — session lifetimes, brute-force
+protection, events — put a partial realm document in `configCli.extraConfig`. No
+copy of the chart and no ConfigMap of your own is needed, so this works for an
+install from the OCI registry and from an ArgoCD values file:
+
+```yaml
+configCli:
+  enabled: true
+  extraConfig:
+    10-session.yaml:
+      realm: scoutid
+      ssoSessionIdleTimeout: 86400      # 1 day
+      ssoSessionMaxLifespan: 604800     # 7 days
+```
+
+Each key is a file name and each value the file's content, either as a map (as
+above) or as a string holding YAML or JSON. The files join the bundled ones in the
+same ConfigMap. keycloak-config-cli applies files in name order, and a partial
+realm document changes only the keys it names, so `10-session.yaml` overrides those
+two settings from `01-realm.yaml` and leaves the rest alone. A change to the content
+re-runs the config Job.
+
+Rules, each enforced at render time because the runtime failure is silent:
+
+| Rule | What would happen otherwise |
+|---|---|
+| `configCli.enabled: true` is required | The entry is never mounted |
+| The name must sort after the bundled `04-clients.yaml` (use `05-` to `99-`) | The bundled file runs after yours and undoes it on every sync |
+| The name must not match a bundled file or a `configDir` file | One file silently replaces the other |
+| `realm:` must be `scoutid` (or `master`) | keycloak-config-cli creates a second, empty realm under the misspelt name |
+| Cannot be combined with `existingConfigMap` | Your ConfigMap replaces the chart's, so the entry is never mounted |
+
+Within the realm, each sync applies the bundled value first and yours a few seconds
+later. Nothing reads the setting in between, so the flip is harmless.
+
+Scopes, mappers and flows follow the same override rules as everything else in the
+bundled config (see [Who owns what](#who-owns-what)). A client scope listed here
+has its mapper list *replaced*, not extended, so re-declare every mapper it should
+keep. `$(env:VAR)` placeholders work as in any other config file; supply the
+variables through `configCli.extraEnv` or `configCli.extraEnvFrom`.
+
+With `scoutid.enabled: false`, `extraConfig` is your whole realm configuration, and
+the naming and realm rules above do not apply.
+
+`scripts/check-extra-config.py` pins all of this and runs in CI.
 
 ### Who owns what
 
@@ -318,8 +368,9 @@ files into one full-realm document, silently start deleting.
 > the config afterwards. This is why `configCli.enabled` defaults to `false` — the
 > bundled ScoutID config declares no groups, so it is unaffected.
 
-`configCli.enabled` adds *your* configuration on top of the bundled ScoutID files;
-both land in one ConfigMap, applied in filename order. Name your files so they sort
+`configCli.enabled` adds *your* configuration (`extraConfig` and/or `configDir`) on
+top of the bundled ScoutID files; all land in one ConfigMap, applied in filename
+order. Name your files so they sort
 after the bundled `01-`–`04-` ones (e.g. `10-clients.yaml`); a filename that collides
 with a bundled file is rejected at render time rather than silently replacing it.
 `configCli.existingConfigMap` replaces the config entirely, so it cannot be combined
