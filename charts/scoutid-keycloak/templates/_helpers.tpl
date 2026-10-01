@@ -108,8 +108,16 @@ file fails at `helm template` rather than at runtime.
 {{- if and .Values.ingress.admin.enabled (not .Values.hostname.admin) -}}
 {{- fail "ingress.admin.enabled=true requires hostname.admin" -}}
 {{- end -}}
-{{- if and (eq .Values.ingress.type "ingress") .Values.ingress.public.rootRedirect.enabled -}}
-{{- fail "ingress.public.rootRedirect is only implemented for ingress.type=ingressroute; on a plain Ingress add a controller-specific redirect annotation instead" -}}
+{{- if .Values.ingress.public.rootRedirect.enabled -}}
+{{- if eq .Values.ingress.type "none" -}}
+{{- fail "ingress.public.rootRedirect needs the chart's ingress, but ingress.type=none renders none. Set up the redirect in your own ingress, or disable rootRedirect." -}}
+{{- end -}}
+{{- if not .Values.ingress.public.enabled -}}
+{{- fail "ingress.public.rootRedirect requires ingress.public.enabled=true; there is no public route to redirect from" -}}
+{{- end -}}
+{{- if and (eq .Values.ingress.type "ingress") (ne .Values.ingress.className "traefik") -}}
+{{- fail (printf "ingress.public.rootRedirect is a Traefik Middleware and would be silently ignored by ingress controller %q. Use Traefik, or disable rootRedirect and add a redirect annotation for your controller in ingress.annotations." .Values.ingress.className) -}}
+{{- end -}}
 {{- end -}}
 {{- if and .Values.ingress.admin.ipAllowList (eq .Values.ingress.type "ingress") (ne .Values.ingress.className "traefik") -}}
 {{- fail (printf "ingress.admin.ipAllowList is enforced by a Traefik Middleware and would be silently ignored by ingress controller %q, leaving the admin host ungated. Either use Traefik, or clear ipAllowList and set an equivalent annotation for your controller in ingress.annotations (nginx: nginx.ingress.kubernetes.io/whitelist-source-range)." .Values.ingress.className) -}}

@@ -178,14 +178,15 @@ after the first install.
 | `ingress.clusterIssuer` | `letsencrypt-prod` | |
 | `ingress.entryPoint` | `websecure` | `ingressroute` only |
 | `ingress.public.paths` | `["/realms","/resources"]` | `["/"]` exposes everything |
-| `ingress.public.rootRedirect.enabled` | `false` | `ingressroute` only |
+| `ingress.public.rootRedirect.enabled` | `false` | Traefik only, in either mode |
+| `ingress.public.rootRedirect.url` | the ScoutID page on scouterna.se | Target of the 301 |
 | `ingress.admin.enabled` | `false` | |
 | `ingress.admin.ipAllowList` | `[]` | Empty means no gate |
 
 `ingress` emits standard `networking.k8s.io/v1` objects and works with any
 controller. `ingressroute` emits Traefik CRDs plus explicit cert-manager
-`Certificate` resources, and is the only mode supporting `rootRedirect` — asking for
-it on a plain Ingress fails at render time rather than silently doing nothing.
+`Certificate` resources. On `azure-webservices`, use `ingress`: the `apps-*`
+AppProjects do not allow `Certificate` resources.
 
 The default `public.paths` restricts the public host to `/realms` and `/resources`.
 Anything else 404s at the ingress. Combined with a separate `hostname.admin`, the
@@ -199,6 +200,42 @@ set `nginx.ingress.kubernetes.io/whitelist-source-range` via `ingress.annotation
 
 An empty list means no gate at all — prefer that over a `0.0.0.0/0` entry, which
 looks like a restriction while allowing everything.
+
+### Redirecting the root URL
+
+`rootRedirect` answers `https://<public host>/` with a permanent redirect to
+`rootRedirect.url`, as the earlier ScoutID deployments do. Traefik sends the 301
+itself, so the request never reaches Keycloak. Only the bare root redirects, with or
+without a query string. `/realms/…` and every other path are untouched.
+
+```yaml
+ingress:
+  public:
+    rootRedirect:
+      enabled: true
+```
+
+It is a Traefik `redirectRegex` Middleware in both modes. In `ingressroute` mode
+the public IngressRoute gets an extra route for `/`. In `ingress` mode the chart
+adds a second Ingress, `<release>-root-redirect`, for the public host. It
+serves only `/` (`pathType: Exact`) and carries the Middleware. Three details
+of that Ingress matter, and CI checks all three:
+
+- It reuses the public TLS secret and has **no cert-manager annotation**. The
+  public Ingress already owns that certificate, and a second owner would make
+  cert-manager manage one secret twice. Your other `ingress.annotations` are
+  copied.
+- It sets `traefik.ingress.kubernetes.io/router.priority: "1000"`. Traefik
+  otherwise ranks Ingress routers by rule length, and a catch-all
+  `paths: ["/"]` (`PathPrefix(/)`) would outrank `Path(/)`. The redirect
+  would then never fire.
+- The regex allows a query string. Traefik matches it against the full URL,
+  and a strict `^https://host/?$` would let `/?x=1` fall through to
+  Keycloak.
+
+It is rejected at render time with a non-Traefik `ingress.className`, with
+`ingress.type: none`, and with the public ingress disabled. In each of those cases
+it would otherwise do nothing.
 
 ## Metrics
 

@@ -32,6 +32,45 @@ spec:
                 port:
                   number: {{ $port }}
           {{- end }}
+{{- if .Values.ingress.public.rootRedirect.enabled }}
+{{/* Shares the public TLS secret, so no cert-manager annotation: cert-manager would
+     otherwise manage that secret twice. The priority outranks a catch-all "/"
+     Prefix, whose rule Traefik would otherwise rank higher. */}}
+{{- $rootAnnotations := dict -}}
+{{- range $k, $v := .Values.ingress.annotations -}}
+{{- if not (hasPrefix "cert-manager.io/" $k) -}}
+{{- $_ := set $rootAnnotations $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $_ := set $rootAnnotations "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s-root-redirect@kubernetescrd" .Release.Namespace $fullName) -}}
+{{- $_ := set $rootAnnotations "traefik.ingress.kubernetes.io/router.priority" "1000" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-root-redirect
+  labels:
+    {{- include "scoutid-keycloak.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml $rootAnnotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.hostname.public | quote }}
+      secretName: {{ include "scoutid-keycloak.publicTlsSecret" . }}
+  rules:
+    - host: {{ .Values.hostname.public | quote }}
+      http:
+        paths:
+          - path: "/"
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $port }}
+{{- end }}
 {{- end }}
 {{- if .Values.ingress.admin.enabled }}
 {{- $adminAnnotations := dict "cert-manager.io/cluster-issuer" .Values.ingress.clusterIssuer -}}

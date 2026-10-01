@@ -11,7 +11,7 @@ choice is a value: it deploys against any Kubernetes and any PostgreSQL.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.5.0 \
+  --version 0.6.0 \
   --namespace proj-scoutid-dev \
   -f my-values.yaml
 ```

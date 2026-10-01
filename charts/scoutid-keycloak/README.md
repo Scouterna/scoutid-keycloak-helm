@@ -5,7 +5,7 @@ Keycloak with the Scoutnet authenticator and ScoutID theme
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.5.0 -n <namespace> -f values.yaml
+  --version 0.6.0 -n <namespace> -f values.yaml
 ```
 
 Ships the ScoutID realm configuration (realm `scoutid`; `master` left stock): the

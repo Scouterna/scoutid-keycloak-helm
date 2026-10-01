@@ -20,10 +20,10 @@ spec:
       {{- toYaml .Values.ingress.admin.ipAllowList | nindent 6 }}
 {{- end }}
 
-{{- if $isRoute }}
-{{- if and .Values.ingress.public.enabled .Values.ingress.public.rootRedirect.enabled }}
+{{- if and $traefik .Values.ingress.public.enabled .Values.ingress.public.rootRedirect.enabled }}
 ---
-# Traefik answers the redirect before the request reaches Keycloak.
+# Traefik answers the redirect before the request reaches Keycloak. The regex sees
+# the query string too, so an optional one is allowed.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -32,10 +32,12 @@ metadata:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
 spec:
   redirectRegex:
-    regex: {{ printf "^https://%s/?$" (.Values.hostname.public | replace "." "\\.") | quote }}
+    regex: {{ printf "^https://%s/?(\\?.*)?$" (.Values.hostname.public | replace "." "\\.") | quote }}
     replacement: {{ .Values.ingress.public.rootRedirect.url | quote }}
     permanent: true
 {{- end }}
+
+{{- if $isRoute }}
 {{- if .Values.ingress.public.enabled }}
 ---
 apiVersion: cert-manager.io/v1

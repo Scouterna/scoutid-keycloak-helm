@@ -26,6 +26,8 @@ ingress:
     paths:
       - /realms
       - /resources
+    rootRedirect:
+      enabled: true                      # / -> the ScoutID page on scouterna.se
   admin:
     enabled: true
     ipAllowList: []                      # open on dev

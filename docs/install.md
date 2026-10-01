@@ -62,7 +62,7 @@ in `k8s/projects/proj-scoutid/infra/`, not in the app chart.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.5.0 -n proj-scoutid-dev \
+  --version 0.6.0 -n proj-scoutid-dev \
   -f examples/values-azure-webservices-dev.yaml
 ```
 

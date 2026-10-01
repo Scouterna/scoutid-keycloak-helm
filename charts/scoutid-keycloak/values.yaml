@@ -99,7 +99,7 @@ ingress:
       - /realms
       - /resources
     rootRedirect:
-      enabled: false             # ingressroute only
+      enabled: false             # Traefik only; 301 from / to url
       url: https://www.scouterna.se/scout-ledare-kar/leda-kar/etjanster/scoutid/
     tlsSecretName: ""
   admin:
