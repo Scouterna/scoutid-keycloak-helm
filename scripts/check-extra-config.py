@@ -50,7 +50,7 @@ def cli(extra, **more):
 def configmap(stdout):
     docs = [d for d in yaml.safe_load_all(stdout) if d]
     cms = [d for d in docs if d.get("kind") == "ConfigMap"]
-    jobs = [d for d in docs if d.get("kind") == "Job" and d["metadata"]["name"].endswith("-config")]
+    jobs = [d for d in docs if d.get("kind") == "Job" and d["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "config-cli"]
     return (cms[0]["data"] if cms else {}), (jobs[0] if jobs else None)
 
 
@@ -76,7 +76,7 @@ def main():
     data, job = expect_rendered("map form", cli({"10-session.yaml": SESSION}))
     if data is not None:
         if sorted(data) != ["01-realm.yaml", "02-authentication.yaml", "03-scopes.yaml",
-                            "04-clients.yaml", "10-session.yaml"]:
+                            "04-clients.yaml", "05-master.yaml", "10-session.yaml"]:
             error(f"unexpected ConfigMap keys: {sorted(data)}")
         elif yaml.safe_load(data["10-session.yaml"]) != SESSION:
             error(f"map form changed in rendering: {data['10-session.yaml']!r}")
@@ -108,15 +108,20 @@ def main():
             error(f"extraConfig-only: keys={sorted(data)} job={bool(job)}")
 
     # A content change must change the checksum, or the Job is not re-run.
-    sums = []
+    # The Job name must change too: a pod template is immutable, so a changed config
+    # under the old name fails the upgrade while the previous Job still exists.
+    sums, names = [], []
     for timeout in (86400, 3600):
         ok, out, _ = render(cli({"10-session.yaml": {**SESSION, "ssoSessionIdleTimeout": timeout}}))
         _, job = configmap(out) if ok else ({}, None)
         sums.append(job and job["spec"]["template"]["metadata"]["annotations"]["checksum/config"])
+        names.append(job and job["metadata"]["name"])
     if not all(sums) or sums[0] == sums[1]:
         error("checksum/config does not change with extraConfig content")
+    elif names[0] == names[1]:
+        error(f"config Job keeps its name {names[0]!r} across a config change; the upgrade would fail on the immutable pod template")
     else:
-        print("ok: checksum follows extraConfig content")
+        print("ok: checksum and Job name follow extraConfig content")
 
     expect_rejected("extraConfig with configCli.enabled=false",
                     {"configCli": {"enabled": False, "extraConfig": {"10-s.yaml": SESSION}}})
@@ -127,7 +132,7 @@ def main():
     expect_rejected("name with a path separator", cli({"a/10-session.yaml": SESSION}))
     expect_rejected("name of a bundled file", cli({"01-realm.yaml": SESSION}))
     expect_rejected("name sorting before the bundled files", cli({"00-session.yaml": SESSION}))
-    expect_rejected("name sorting between bundled files", cli({"04-a.yaml": SESSION}))
+    expect_rejected("name sorting between bundled files", cli({"05-a.yaml": SESSION}))
     expect_rejected("name colliding with a configDir file",
                     {"scoutid": {"enabled": False},
                      **cli({"01-realm.yaml": {"realm": "x"}}, configDir="scoutid-config")})

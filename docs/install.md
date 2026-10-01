@@ -62,7 +62,7 @@ in `k8s/projects/proj-scoutid/infra/`, not in the app chart.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.6.0 -n proj-scoutid-dev \
+  --version 0.7.0 -n proj-scoutid-dev \
   -f examples/values-azure-webservices-dev.yaml
 ```
 
@@ -180,6 +180,22 @@ With a single replica the strategy is `Recreate`, so there is a short outage whi
 the new pod starts — deliberate, because two Keycloak versions must not run against
 one database schema at the same time. Keycloak upgrades may migrate the schema, so
 confirm the database backup is current first.
+
+### To 0.7.0: production realm defaults
+
+The bundled realm settings are now production values; see
+[Production defaults](configuration.md#production-defaults). Two changes are
+visible to users and apps:
+
+- **Sessions are 1 day unless the user ticks "remember me"** (30 days). Before,
+  sessions lasted 30 days either way. Users of apps that relied on the long
+  session will have to log in again sooner. Development and staging can keep
+  longer sessions through `configCli.extraConfig`.
+- **Offline tokens expire after 60 days** even when in use.
+
+Realm `master` gets brute-force protection and admin events. The config Job's
+name now ends in a checksum of the config (`<release>-config-<hash>`), so a
+`kubectl logs job/…` command needs the new name. NOTES prints it.
 
 ### To 0.5.0: database defaults changed
 

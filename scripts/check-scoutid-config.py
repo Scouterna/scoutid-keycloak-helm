@@ -29,6 +29,9 @@ REQUIRED_CLAIMS = {
 
 EXPECTED_AUTHENTICATORS = ["scoutnet-cookie-authenticator", "scoutnet-authenticator"]
 
+MASTER_ALLOWED = {"realm", "bruteForceProtected", "adminEventsEnabled", "adminEventsDetailsEnabled", "attributes"}
+MASTER_ATTRIBUTES = {"adminEventsExpiration"}
+
 
 def error(msg):
     print(f"::error::{msg}")
@@ -88,11 +91,44 @@ def main():
                     claims.add(claim)
         print(f"ok: {name} parsed")
 
-    if realms != {"scoutid"}:
-        error(f"expected realm scoutid in every file, got {sorted(realms)}")
+    if realms != {"scoutid", "master"}:
+        error(f"expected realm scoutid, plus master for 05-master.yaml, got {sorted(realms)}")
         failed = True
     elif not check_schema_enum("scoutid"):
         failed = True
+
+    # master is the administrators' realm: hardening only. A flow or theme change
+    # there could lock every administrator out.
+    master = yaml.safe_load(data.get("05-master.yaml", "{}")) or {}
+    extra = set(master) - MASTER_ALLOWED
+    if master.get("realm") != "master":
+        error("05-master.yaml must target realm master")
+        failed = True
+    elif extra or set(master.get("attributes") or {}) - MASTER_ATTRIBUTES:
+        error(f"05-master.yaml may only harden master; unexpected keys {sorted(extra)} "
+              f"or attributes {sorted(set(master.get('attributes') or {}) - MASTER_ATTRIBUTES)}")
+        failed = True
+    elif master.get("bruteForceProtected") is not True or master.get("adminEventsEnabled") is not True:
+        error("05-master.yaml lost brute-force protection or admin events")
+        failed = True
+    else:
+        print("ok: master gets brute-force protection and admin events, nothing else")
+
+    # The production defaults from the realm review. Environments override them,
+    # the chart must not lose them.
+    r = yaml.safe_load(data["01-realm.yaml"])
+    want = {"adminEventsEnabled": True, "adminEventsDetailsEnabled": True,
+            "offlineSessionMaxLifespanEnabled": True}
+    lost = {k: r.get(k) for k, v in want.items() if r.get(k) is not v}
+    if lost:
+        error(f"01-realm.yaml lost production defaults: {lost}")
+        failed = True
+    elif not (r["ssoSessionIdleTimeoutRememberMe"] >= r["ssoSessionIdleTimeout"]
+              and r["ssoSessionMaxLifespanRememberMe"] >= r["ssoSessionMaxLifespan"]):
+        error("remember-me sessions must not be shorter than ordinary ones")
+        failed = True
+    else:
+        print("ok: production defaults present in 01-realm.yaml")
 
     missing = REQUIRED_CLAIMS - claims
     if missing:

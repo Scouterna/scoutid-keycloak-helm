@@ -11,7 +11,7 @@ choice is a value: it deploys against any Kubernetes and any PostgreSQL.
 
 ```bash
 helm install scoutid-keycloak oci://ghcr.io/scouterna/charts/scoutid-keycloak \
-  --version 0.6.0 \
+  --version 0.7.0 \
   --namespace proj-scoutid-dev \
   -f my-values.yaml
 ```
@@ -43,8 +43,8 @@ the `scoutid` login theme, the ScoutID user-profile schema, and the claims contr
 (`scoutnet_member_no`, `memberships`, `primary_group_no`, `scoutnet-memberships`
 scope, …).
 
-It configures the **`scoutid`** realm and leaves `master` stock for Keycloak
-administrators. Set `scoutid.enabled: false` for a plain Keycloak.
+It configures the **`scoutid`** realm with production defaults, and only hardens
+`master`, the administrators' realm. Set `scoutid.enabled: false` for a plain Keycloak.
 
 To change individual realm settings for one deployment, such as session lifetimes,
 override them in your values file:

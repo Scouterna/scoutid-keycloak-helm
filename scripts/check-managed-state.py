@@ -41,7 +41,7 @@ def job_env(*extra):
     if out.returncode != 0:
         return None
     for doc in yaml.safe_load_all(out.stdout):
-        if doc and doc.get("kind") == "Job" and doc["metadata"]["name"].endswith("-config"):
+        if doc and doc.get("kind") == "Job" and doc["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "config-cli":
             container = doc["spec"]["template"]["spec"]["containers"][0]
             return {e["name"]: e.get("value") for e in container.get("env", [])}
     return None

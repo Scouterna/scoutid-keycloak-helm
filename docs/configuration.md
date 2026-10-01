@@ -279,8 +279,13 @@ configuration changes. A deployment that needs different values for some setting
 overrides them in its values file with `configCli.extraConfig` — see
 [Overriding the bundled realm settings](#overriding-the-bundled-realm-settings).
 
-It configures the **`scoutid`** realm and leaves `master` stock, so Keycloak
-administrators stay separate from ScoutID members.
+It configures the **`scoutid`** realm, so Keycloak administrators (in `master`)
+stay separate from ScoutID members. `master` is only hardened: brute-force
+protection and admin events. Everything else there stays Keycloak's default.
+
+**The defaults are production values.** Development and staging override what
+they need with `configCli.extraConfig`, rather than production overriding
+convenient defaults. See [Production defaults](#production-defaults).
 
 The realm name is fixed by the bundled files, not by a value. `scoutid.realm` exists
 only so tooling can read it: left empty the chart derives it from the config itself,
@@ -291,7 +296,7 @@ disable `scoutid.enabled` and supply your own config through `configCli`.
 What it contains:
 
 - **`01-realm.yaml`** — theme `scoutid`, Swedish/English with `sv` default, token and
-  session lifetimes, and the full user-profile schema. Scoutnet is the credential
+  session lifetimes, admin events, and the full user-profile schema. Scoutnet is the credential
   authority, so self-registration, password reset and email login are all off.
 - **`02-authentication.yaml`** — the `ScoutID browser login` flow (cookie
   re-authenticator, falling back to the interactive Scoutnet authenticator) bound as
@@ -300,12 +305,61 @@ What it contains:
   with the ScoutID attributes, plus the custom `scoutnet-memberships` scope.
 - **`04-clients.yaml`** — `account` (needs the scopes to render attributes) and
   `security-admin-console` (pinned to the built-in browser flow).
+- **`05-master.yaml`** — realm `master`: brute-force protection, admin events and their
+  expiration.
+  CI rejects any other key there, because a flow or theme change in `master` could
+  lock every administrator out.
 
 Relying-party clients are **not** included. They carry per-environment secrets and
 redirect URIs, so they are registered separately.
 
 `admin.bootstrap.existingSecret` is required while this is enabled — config-cli
 authenticates as that admin.
+
+### Production defaults
+
+Settled in a review against production defaults before go-live (2026-10-01):
+
+| Setting | Value | Why |
+|---|---|---|
+| `ssoSessionIdleTimeout` / `ssoSessionMaxLifespan` | 1 day | A login on a shared computer, such as one in a scout hut, does not stay valid for a month |
+| `ssoSessionIdleTimeoutRememberMe` / `ssoSessionMaxLifespanRememberMe` | 30 days | Ticking "remember me" keeps the convenience |
+| `offlineSessionMaxLifespanEnabled` / `offlineSessionMaxLifespan` | on, 60 days | `offline_access` is a default role, so any client can get offline tokens; without a maximum they live as long as they are used |
+| `adminEventsEnabled` / `adminEventsDetailsEnabled` | on, in `scoutid` and `master` | Several admins (Dex, the admin GUI) can change clients; this records who changed what |
+| `adminEventsExpiration` (realm attribute) | 1 year, in both realms | Bounds the table; every config-cli sync adds a few events too |
+| `bruteForceProtected` | on, in `master` only | See below |
+
+Session lengths affect relying parties. An app that expects a month-long session
+logs its users in again after a day unless they ticked "remember me". Override
+them per environment if an app needs time to adapt:
+
+```yaml
+configCli:
+  enabled: true
+  extraConfig:
+    10-session.yaml:
+      realm: scoutid
+      ssoSessionIdleTimeout: 604800
+      ssoSessionMaxLifespan: 604800
+```
+
+**Brute-force protection is on in `master` and deliberately off in `scoutid`.**
+Keycloak counts failures against the user the login flow identified. In
+`scoutid`, the Scoutnet authenticator checks the password with Scoutnet and only
+identifies the Keycloak user after a *successful* login. So a failed guess has
+no user to count against, and turning the setting on would protect nothing while
+looking as if it did. Guessing protection for members is Scoutnet's job. In
+`master`, administrators log in with Keycloak's own password form, so lockout
+works there. Lockout is temporary. With Keycloak's defaults, failures under a second
+apart lock the account for a minute at once, and 30 failures lock it for up to 15
+minutes. GitHub logins through Dex do not count.
+
+Login events are not stored. They would put every member's login history in the
+database, and failed logins already appear in the logs.
+
+The admin host has no IP allowlist by default (`ingress.admin.ipAllowList: []`),
+because many administrators lack a static address. `master`'s brute-force
+protection is what guards it.
 
 ### Two things in here that fail silently
 
@@ -403,7 +457,7 @@ Rules, each enforced at render time because the runtime failure is silent:
 | Rule | What would happen otherwise |
 |---|---|
 | `configCli.enabled: true` is required | The entry is never mounted |
-| The name must sort after the bundled `04-clients.yaml` (use `05-` to `99-`) | The bundled file runs after yours and undoes it on every sync |
+| The name must sort after the bundled `05-master.yaml` (use `06-` to `99-`) | The bundled file runs after yours and undoes it on every sync |
 | The name must not match a bundled file or a `configDir` file | One file silently replaces the other |
 | `realm:` must be `scoutid` (or `master`) | keycloak-config-cli creates a second, empty realm under the misspelt name |
 | Cannot be combined with `existingConfigMap` | Your ConfigMap replaces the chart's, so the entry is never mounted |
@@ -461,7 +515,7 @@ files into one full-realm document, silently start deleting.
 `configCli.enabled` adds *your* configuration (`extraConfig` and/or `configDir`) on
 top of the bundled ScoutID files; all land in one ConfigMap, applied in filename
 order. Name your files so they sort
-after the bundled `01-`–`04-` ones (e.g. `10-clients.yaml`); a filename that collides
+after the bundled `01-`–`05-` ones (e.g. `10-clients.yaml`); a filename that collides
 with a bundled file is rejected at render time rather than silently replacing it.
 `configCli.existingConfigMap` replaces the config entirely, so it cannot be combined
 with `scoutid.enabled`, nor with `configCli.configDir` — the ConfigMap would win and

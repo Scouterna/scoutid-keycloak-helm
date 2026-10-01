@@ -73,7 +73,7 @@ def render(scoutid, cli, configdir, existingcm):
 
 def observe(stdout):
     docs = [d for d in yaml.safe_load_all(stdout) if d]
-    jobs = [d for d in docs if d.get("kind") == "Job" and d["metadata"]["name"].endswith("-config")]
+    jobs = [d for d in docs if d.get("kind") == "Job" and d["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") == "config-cli"]
     mounts = None
     if jobs:
         volumes = jobs[0]["spec"]["template"]["spec"].get("volumes", [])

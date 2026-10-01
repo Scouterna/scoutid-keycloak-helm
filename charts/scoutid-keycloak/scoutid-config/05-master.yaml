@@ -1,0 +1,12 @@
+# The administrators' realm. Only hardening; everything else stays Keycloak's default.
+
+realm: master
+
+# Admins log in with Keycloak's own password form here, so lockout works (unlike
+# realm scoutid, where the password is checked by Scoutnet).
+bruteForceProtected: true
+
+adminEventsEnabled: true
+adminEventsDetailsEnabled: true
+attributes:
+  adminEventsExpiration: "31536000"   # 1 year

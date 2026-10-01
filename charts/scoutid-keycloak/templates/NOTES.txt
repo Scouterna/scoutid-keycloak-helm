@@ -52,13 +52,14 @@ database that already has an admin; a fresh database will have no way to log in.
 ScoutID realm config is applied to realm '{{ include "scoutid-keycloak.scoutidRealm" . }}' by the
 config-cli Job. Watch it complete before testing login:
 
-  kubectl -n {{ .Release.Namespace }} logs job/{{ include "scoutid-keycloak.fullname" . }}-config
+  kubectl -n {{ .Release.Namespace }} logs job/{{ include "scoutid-keycloak.configJobName" . }}
 
 Then check the realm is serving:
 
   curl -s {{ include "scoutid-keycloak.publicUrl" . }}/realms/{{ include "scoutid-keycloak.scoutidRealm" . }}/.well-known/openid-configuration
 
-The admin console lives in the 'master' realm, which is left stock.
+The admin console lives in the 'master' realm (brute-force protection and admin
+events on, otherwise stock).
 {{- else }}
 
 NOTE: scoutid.enabled=false — this is a plain Keycloak. No ScoutID login flow,

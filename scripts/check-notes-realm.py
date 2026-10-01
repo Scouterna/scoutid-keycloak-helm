@@ -31,11 +31,11 @@ BASE = [
 
 
 def bundled_realms():
-    """The realm every file under scoutid-config/ declares."""
+    """The realm the files under scoutid-config/ declare, besides 05-master.yaml's master."""
     realms = set()
     for path in sorted((CHART / "scoutid-config").glob("*.yaml")):
         doc = yaml.safe_load(path.read_text())
-        if isinstance(doc, dict) and doc.get("realm"):
+        if isinstance(doc, dict) and doc.get("realm") and doc["realm"] != "master":
             realms.add(doc["realm"])
     return realms
 
@@ -46,9 +46,10 @@ def rendered_notes():
         probe = pathlib.Path(tmp) / "probe"
         shutil.copytree(CHART, probe)
         templates = probe / "templates"
-        # Keep NOTES.txt and the partials it calls; drop every real manifest.
+        # Keep NOTES.txt and the partials it calls; drop every real manifest except
+        # the realm ConfigMap, which the Job-name helper checksums.
         for child in templates.iterdir():
-            if child.name in ("NOTES.txt",) or child.name.startswith("_"):
+            if child.name in ("NOTES.txt", "configmap-realm.yaml") or child.name.startswith("_"):
                 continue
             child.unlink() if child.is_file() else shutil.rmtree(child)
         # Rendered as a template it must produce output, so give it a document.

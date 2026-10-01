@@ -7,8 +7,16 @@ realm: scoutid
 enabled: true
 
 accessTokenLifespan: 300          # 5 minutes
-ssoSessionIdleTimeout: 2592000    # 30 days
-ssoSessionMaxLifespan: 2592000    # 30 days
+ssoSessionIdleTimeout: 86400      # 1 day
+ssoSessionMaxLifespan: 86400      # 1 day
+ssoSessionIdleTimeoutRememberMe: 2592000   # 30 days
+ssoSessionMaxLifespanRememberMe: 2592000   # 30 days
+offlineSessionMaxLifespanEnabled: true     # default: offline tokens live while used
+offlineSessionMaxLifespan: 5184000         # 60 days
+
+# Who changed which client or setting. Login events are deliberately not stored.
+adminEventsEnabled: true
+adminEventsDetailsEnabled: true
 
 loginTheme: scoutid
 adminTheme: keycloak.v2
@@ -32,6 +40,7 @@ editUsernameAllowed: false
 
 attributes:
   userProfileEnabled: "true"
+  adminEventsExpiration: "31536000"   # 1 year; config-cli syncs add events too
 
 userProfile:
   # The provider writes one group_email_<groupId> attribute per group; those names

@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "scoutid-keycloak.fullname" . }}-config
+  name: {{ include "scoutid-keycloak.configJobName" . }}
   labels:
     {{- include "scoutid-keycloak.labels" . | nindent 4 }}
   {{- if .Values.configCli.hook }}

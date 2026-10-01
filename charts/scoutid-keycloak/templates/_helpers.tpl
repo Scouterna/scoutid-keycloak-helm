@@ -214,6 +214,22 @@ guard and the ConfigMap must agree on exactly which files are in play.
 {{- end -}}
 
 {{/*
+Name of the config-cli Job. A Job's pod template is immutable, so a config change
+under a fixed name fails the upgrade while the previous Job still exists. The
+config checksum in the name makes a changed config a new Job instead; Helm removes
+the old one. With an existingConfigMap there is no content to checksum.
+*/}}
+{{- define "scoutid-keycloak.configJobName" -}}
+{{- $base := printf "%s-config" (include "scoutid-keycloak.fullname" .) -}}
+{{- if .Values.configCli.existingConfigMap -}}
+{{- $base | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $sum := include (print .Template.BasePath "/configmap-realm.yaml") . | sha256sum | trunc 8 -}}
+{{- printf "%s-%s" ($base | trunc 54 | trimSuffix "-") $sum -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The text of one configCli.extraConfig entry: a string is taken verbatim, a map is
 rendered as YAML.
 */}}
@@ -306,19 +322,20 @@ Go's text/template sorts map keys when ranging, so key order is deterministic.
 
 {{/*
 The realm the bundled ScoutID config actually targets, read from the files
-themselves so displayed output can never diverge from what is imported.
+themselves so displayed output can never diverge from what is imported. The
+bundled master hardening (05-master.yaml) is not the ScoutID realm.
 */}}
 {{- define "scoutid-keycloak.scoutidRealm" -}}
 {{- $realms := list -}}
 {{- range $path, $_ := .Files.Glob "scoutid-config/*.yaml" -}}
 {{- $doc := $.Files.Get $path | fromYaml -}}
-{{- if $doc.realm -}}
+{{- if and $doc.realm (ne (toString $doc.realm) "master") -}}
 {{- $realms = append $realms $doc.realm -}}
 {{- end -}}
 {{- end -}}
 {{- $realms = uniq $realms -}}
-{{- if gt (len $realms) 1 -}}
-{{- fail (printf "the bundled ScoutID config targets more than one realm (%v); every file must declare the same realm" $realms) -}}
+{{- if ne (len $realms) 1 -}}
+{{- fail (printf "the bundled ScoutID config must target exactly one realm besides master, found %v" $realms) -}}
 {{- end -}}
 {{- first $realms -}}
 {{- end -}}
